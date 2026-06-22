@@ -8,3 +8,6 @@ data/suggestions.json
 data/equity_history.json
 data/cron.log
 .vercel
+.env*
+.env.vercel
+.env.prod
