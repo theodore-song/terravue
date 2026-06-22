@@ -4,3 +4,8 @@ INFO:     Application startup complete.
 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
 INFO:     127.0.0.1:58178 - "GET / HTTP/1.1" 200 OK
 INFO:     127.0.0.1:58179 - "GET /api/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58313 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58313 - "GET /api/suggestions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58317 - "GET /api/equity-history HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58318 - "GET /api/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58314 - "GET /api/portfolio HTTP/1.1" 200 OK
