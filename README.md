@@ -101,7 +101,7 @@ else — tabs, screener, charts — works fully.
 |------|------|
 | `api/index.py` | Slim read-only FastAPI function (no pandas) Vercel runs |
 | `app/store.py` | KV/Upstash-or-local-file JSON storage used by everything |
-| `vercel.json` | Routes all paths to the function; bundles `static/` |
+| `vercel.json` | Serves `public/` statically; routes `/api/*` to the function |
 | `requirements.txt` | Slim deps for Vercel (`requirements-local.txt` = full local) |
 
 ## How it works
@@ -115,7 +115,7 @@ else — tabs, screener, charts — works fully.
 | `app/portfolio.py` | Persistent paper portfolio: cash, positions, trades, equity curve |
 | `app/agent.py` | The trading agent — exit/entry rules + position sizing |
 | `app/main.py` | FastAPI server + JSON APIs |
-| `static/index.html` | Tabbed dashboard: Overview · Markets · Signals · Portfolio · Trades |
+| `public/index.html` | Tabbed dashboard: Overview · Markets · Signals · Portfolio · Trades |
 | `run_daily.py` | One-shot daily cycle for cron |
 
 ### Agent logic (in `app/config.py`, tweakable)

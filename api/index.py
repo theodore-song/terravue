@@ -1,9 +1,10 @@
-"""Slim, read-only FastAPI app for Vercel.
+"""Slim, read-only API for Vercel.
 
-Serves the dashboard and returns precomputed data from the cloud KV store. It
-imports NO heavy dependencies (no pandas/yfinance) so the serverless bundle stays
-small and cold starts fast. All compute (analysis + trading) happens elsewhere
-and publishes results to the store; this app only reads them.
+Returns precomputed data from the cloud KV store. Imports NO heavy dependencies
+(no pandas/yfinance) so the serverless bundle stays small and cold starts fast.
+The dashboard itself (public/index.html) is served by Vercel as a static asset;
+this function only answers /api/* requests. All compute happens elsewhere and
+publishes results to the store; this app only reads them.
 """
 from __future__ import annotations
 
@@ -14,25 +15,11 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from fastapi import FastAPI                       # noqa: E402
-from fastapi.responses import FileResponse, JSONResponse  # noqa: E402
+from fastapi.responses import JSONResponse        # noqa: E402
 
 from app import store                             # noqa: E402
 
-STATIC = ROOT / "static"
 app = FastAPI(title="Terravue (read-only)")
-
-
-@app.get("/")
-def index():
-    return FileResponse(STATIC / "index.html")
-
-
-@app.get("/static/{path:path}")
-def static_files(path: str):
-    target = (STATIC / path).resolve()
-    if STATIC in target.parents and target.exists():
-        return FileResponse(target)
-    return JSONResponse({"error": "not found"}, status_code=404)
 
 
 @app.get("/api/status")

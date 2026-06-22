@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 
 from . import advisor, data, store
 from .config import BASE_DIR, LLM_ENABLED
@@ -13,13 +12,12 @@ from .universe import get_universe
 
 app = FastAPI(title="Stock Advisor + Paper Trading Agent")
 
-STATIC_DIR = BASE_DIR / "static"
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+PUBLIC_DIR = BASE_DIR / "public"
 
 
 @app.get("/")
 def index():
-    return FileResponse(STATIC_DIR / "index.html")
+    return FileResponse(PUBLIC_DIR / "index.html")
 
 
 @app.get("/api/status")

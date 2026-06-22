@@ -6,6 +6,7 @@ requirements-local.txt
 run_daily.py
 run_daily.sh
 start.command
+publish.py
 app/main.py
 app/data.py
 app/strategies.py
