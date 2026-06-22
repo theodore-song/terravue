@@ -25,7 +25,7 @@ cd stock-advisor
 
 # 1. (already done if you saw it run) create venv + install deps
 python3 -m venv .venv
-./.venv/bin/pip install -r requirements.txt
+./.venv/bin/pip install -r requirements-local.txt   # full local deps
 
 # 2. (optional) enable Claude-written narratives
 cp .env.example .env          # then paste your ANTHROPIC_API_KEY
@@ -62,6 +62,47 @@ curve. Output is logged to `data/cron.log`.
 > macOS note: cron only fires if the Mac is **awake** at 16:15. If yours is
 > usually asleep then, ask to switch the schedule to `launchd`, which catches up
 > on the next wake.
+
+## Deploying to Vercel (live site + free subdomain)
+
+Vercel is serverless with no persistent disk, so the deployment is **read-only**:
+Vercel serves the dashboard and reads precomputed data from a cloud key-value
+store. Your local daily job does the heavy compute and **publishes** to that store.
+
+```
+  local machine (cron)                    Vercel (free)
+  ┌────────────────────┐   writes   ┌──────────────────┐   reads
+  │ run_daily.py        ├──────────►│  Vercel KV /      │◄────────  visitors
+  │ (yfinance + pandas) │           │  Upstash Redis    │           (read-only)
+  └────────────────────┘           └──────────────────┘
+```
+
+**One-time setup**
+
+1. Push this folder to a GitHub repo (already git-initialized — just add a remote
+   and `git push`).
+2. On <https://vercel.com> → **Add New Project** → import the repo. Framework
+   preset: **Other**. Deploy. You get `https://<project>.vercel.app`.
+3. In the project: **Storage → Create Database → KV (Upstash Redis)** and connect
+   it. Vercel auto-injects `KV_REST_API_URL` and `KV_REST_API_TOKEN`. **Redeploy.**
+4. Point your local job at the same store so it publishes there: open the KV
+   store's **`.env.local`** tab in Vercel, copy `KV_REST_API_URL` and
+   `KV_REST_API_TOKEN` into your local **`.env`** file.
+5. Seed it once: `./.venv/bin/python run_daily.py` (writes locally **and** to KV).
+   Refresh your `.vercel.app` URL — the live site now shows your data.
+
+From then on the weekday cron publishes automatically. To re-push manually:
+`./.venv/bin/python publish.py`.
+
+The live site hides **Run agent** (it runs on schedule and publishes); everything
+else — tabs, screener, charts — works fully.
+
+| Vercel-specific file | Role |
+|------|------|
+| `api/index.py` | Slim read-only FastAPI function (no pandas) Vercel runs |
+| `app/store.py` | KV/Upstash-or-local-file JSON storage used by everything |
+| `vercel.json` | Routes all paths to the function; bundles `static/` |
+| `requirements.txt` | Slim deps for Vercel (`requirements-local.txt` = full local) |
 
 ## How it works
 
