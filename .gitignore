@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+data/price_cache/
+data/portfolio.json
+data/suggestions.json
+data/equity_history.json
+data/cron.log

@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+data/
+requirements-local.txt
+run_daily.py
+run_daily.sh
+start.command
+app/main.py
+app/data.py
+app/strategies.py
+app/advisor.py
+app/agent.py
+app/universe.py

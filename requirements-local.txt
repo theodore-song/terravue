@@ -1,0 +1,12 @@
+# Full dependencies for running the complete app + daily compute LOCALLY.
+# (Vercel uses the slim root requirements.txt instead.)
+fastapi
+uvicorn[standard]
+yfinance
+pandas
+numpy
+jinja2
+anthropic
+python-dotenv
+lxml
+certifi

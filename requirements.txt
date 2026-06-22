@@ -1,0 +1,4 @@
+# Slim deps for the Vercel (read-only) serverless function ONLY.
+# For local development + the daily compute job, use requirements-local.txt.
+fastapi
+certifi
