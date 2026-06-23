@@ -137,3 +137,5 @@ in batches (~28s for the full universe) and cached for 6 hours.
 - `GET /api/portfolio` — snapshot + recent trades
 - `GET /api/equity-history` — equity curve points
 - `POST /api/run-agent` — refresh suggestions and run one trading cycle
+
+<!-- auto-deploy test 1782234858 -->
