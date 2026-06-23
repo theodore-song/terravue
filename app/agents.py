@@ -54,6 +54,17 @@ def _atlas(s: dict) -> float:
     return s.get("composite", 0.0)
 
 
+def _nova(s: dict) -> float:
+    # Breakout specialist: rides names pushing to new highs out of their range.
+    return 1.6 * _sig(s, BREAKOUT) + 0.8 * _sig(s, TREND) + 0.4 * _sig(s, MACD)
+
+
+def _orion(s: dict) -> float:
+    # Low-volatility quality: positive composite, damped hard by volatility.
+    vol = s.get("indicators", {}).get("volatility", 0.3)
+    return s.get("composite", 0.0) / (1.0 + max(vol, 0.05) * 1.5)
+
+
 AGENTS: list[AgentDef] = [
     AgentDef("apex", "Apex", "Momentum",
              "Chases the strongest trends and breakouts. Aggressive and concentrated.",
@@ -64,6 +75,12 @@ AGENTS: list[AgentDef] = [
     AgentDef("atlas", "Atlas", "Balanced",
              "A diversified blend of trend, momentum and breakout signals. Risk-managed.",
              "#BDC4A7", 0.15, 15, 0.5, -0.5, _atlas),
+    AgentDef("nova", "Nova", "Breakout",
+             "Hunts stocks breaking out to new highs out of their trading range. Trend-hungry.",
+             "#95AFBA", 0.18, 12, 0.6, -0.4, _nova),
+    AgentDef("orion", "Orion", "Low-volatility quality",
+             "Prefers steady, low-volatility names with positive momentum. Defensive and broad.",
+             "#D5E1A3", 0.10, 20, 0.4, -0.5, _orion),
 ]
 
 

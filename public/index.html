@@ -226,8 +226,8 @@
     <div class="hero">
       <span class="kicker">AI-powered market intelligence</span>
       <h1>Terravue</h1>
-      <p class="lede">Three AI agents — Apex, Sage and Atlas — screen the top 1,000 US stocks every day,
-        each trading its own paper portfolio with a different strategy, competing head-to-head to maximize returns.</p>
+      <p class="lede">Five AI agents screen the top 1,000 US stocks every day, each trading its own
+        paper portfolio with a different strategy, competing head-to-head to maximize returns.</p>
       <div class="cta">
         <button class="btn lg" onclick="showTab('competition')">See the competition</button>
         <button class="btn lg ghost" onclick="showTab('signals')">Browse signals</button>
@@ -236,14 +236,7 @@
     </div>
 
     <h2 class="sec">Meet the agents</h2>
-    <div class="features">
-      <div class="feat" onclick="showTab('competition')"><div class="ic" style="background:var(--blue)">▲</div>
-        <h3>Apex · Momentum</h3><p>Chases the strongest trends and breakouts. Aggressive and concentrated — up to 10 high-conviction names.</p></div>
-      <div class="feat" onclick="showTab('competition')"><div class="ic" style="background:var(--lime2)">◆</div>
-        <h3>Sage · Contrarian value</h3><p>Buys oversold, beaten-down stocks betting on the bounce. Patient and broadly diversified.</p></div>
-      <div class="feat" onclick="showTab('competition')"><div class="ic" style="background:var(--sage)">●</div>
-        <h3>Atlas · Balanced</h3><p>A risk-managed blend of trend, momentum and breakout signals across ~15 positions.</p></div>
-    </div>
+    <div class="features" id="agentCards"></div>
 
     <h2 class="sec">What's inside</h2>
     <div class="features">
@@ -412,14 +405,18 @@ async function load(){
 function leader(){return (DATA.agents.leaderboard||[])[0]||null;}
 
 function renderHome(status){
-  const d=DATA.sugg, lead=leader();
-  const buys=d.suggestions.filter(x=>x.action==='BUY').length;
+  const d=DATA.sugg, lead=leader(), agents=DATA.agents.agents||[];
   const stat=(n,l)=>`<div class="s"><div class="n">${n}</div><div class="l">${l}</div></div>`;
   $('#homeStats').innerHTML=
     stat((status.universe_size||d.suggestions.length),'stocks tracked')+
-    stat('3','AI agents')+
+    stat(String(agents.length||5),'AI agents')+
     stat(lead?lead.name:'—','current leader')+
     stat(lead?pct(lead.return_pct):'—','leader return');
+  $('#agentCards').innerHTML=agents.map(a=>
+    `<div class="feat" onclick="showTab('competition')">
+       <div class="ic" style="background:${a.color}">●</div>
+       <h3>${a.name} · ${a.style}</h3><p>${a.blurb}</p></div>`).join('')
+    || '<p class="empty">Agents will appear once the daily job has run.</p>';
 }
 
 let READONLY=false;
@@ -449,7 +446,7 @@ function renderOverview(){
   const buys=d.suggestions.filter(x=>x.action==='BUY').length;
   $('#ovMetrics').innerHTML=
     metric('Leader',lead?lead.name:'—',lead?pct(lead.return_pct)+' return':'',lead?cls(lead.return_pct):'')+
-    metric('Agents competing','3','Apex · Sage · Atlas')+
+    metric('Agents competing',String((DATA.agents.agents||[]).length||5),(DATA.agents.agents||[]).map(a=>a.name).join(' · '))+
     metric('Buy signals today',buys,'of '+d.suggestions.length+' names')+
     metric('Avg signal',(d.suggestions.reduce((a,x)=>a+x.composite,0)/Math.max(d.suggestions.length,1)).toFixed(2),'composite score');
 
