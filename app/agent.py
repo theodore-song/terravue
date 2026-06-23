@@ -1,94 +1,115 @@
-"""The trading agent: consumes daily suggestions and manages the paper portfolio.
+"""Trading agents: each consumes the daily suggestions and manages its own
+paper portfolio with its own strategy. They compete on total return.
 
-Rules (deterministic, risk-aware):
-  * SELL/trim positions whose composite signal has turned negative.
-  * BUY/add the highest-conviction names, sized inversely to volatility and
-    capped per position, while keeping a cash reserve.
+Per agent, each cycle:
+  * SELL/exit holdings whose agent-score has turned negative.
+  * BUY/add the highest agent-score names, sized by conviction and inverse
+    volatility, capped per position and per number of holdings, keeping a cash
+    reserve.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
-from . import data
-from .config import (CASH_RESERVE_PCT, MAX_POSITION_PCT,
-                     MIN_CONVICTION_TO_BUY, SELL_CONVICTION)
+from . import store
+from .agents import AGENTS, AgentDef
+from .config import CASH_RESERVE_PCT
 from .portfolio import Portfolio
 
 
-def _target_weight(composite: float, volatility: float) -> float:
-    """Higher conviction -> bigger target; higher vol -> smaller target."""
-    conviction = min(composite / 2.0, 1.0)            # 0..1
-    vol_adj = 1.0 / (1.0 + max(volatility, 0.1) * 2)  # dampen volatile names
-    return min(conviction * vol_adj * MAX_POSITION_PCT, MAX_POSITION_PCT)
+def _target_weight(adef: AgentDef, score: float, volatility: float) -> float:
+    conviction = min(score / 2.0, 1.0)                 # 0..1
+    vol_adj = 1.0 / (1.0 + max(volatility, 0.1) * 2)   # damp volatile names
+    return min(conviction * vol_adj * adef.max_position_pct, adef.max_position_pct)
 
 
-def run_cycle(suggestions: dict, portfolio: Portfolio | None = None) -> dict:
-    """Execute one trading cycle against the given suggestions. Returns a log."""
-    portfolio = portfolio or Portfolio.load()
+def run_cycle(adef: AgentDef, suggestions: dict,
+              portfolio: Portfolio | None = None) -> dict:
+    """Run one trading cycle for a single agent. Returns a log + snapshot."""
+    portfolio = portfolio or Portfolio.load(adef.id)
     actions: list[str] = []
 
     sugg = suggestions.get("suggestions", [])
     by_ticker = {s["ticker"]: s for s in sugg}
-
-    # Price map for valuation (use the suggestion's price; refresh holdings).
     prices = {s["ticker"]: s["price"] for s in sugg}
-    for t in portfolio.positions:
-        if t not in prices:
-            p = data.latest_price(t)
-            if p:
-                prices[t] = p
 
-    # --- 1. Exits: sell holdings that have turned bearish or left the list ---
+    # --- 1. Exits: drop holdings whose agent-score turned negative -----------
     for ticker in list(portfolio.positions.keys()):
         s = by_ticker.get(ticker)
         price = prices.get(ticker, portfolio.positions[ticker].avg_cost)
         if s is None:
-            continue  # no fresh signal; hold
-        if s["composite"] <= SELL_CONVICTION:
+            continue
+        sc = adef.score(s)
+        if sc <= adef.sell_threshold:
             shares = portfolio.positions[ticker].shares
             if portfolio.sell(ticker, shares, price,
-                              f"signal turned bearish ({s['composite']:+.2f})"):
-                actions.append(f"SOLD {shares:.2f} {ticker} @ ${price:.2f} "
-                               f"(signal {s['composite']:+.2f})")
+                              f"{adef.name}: score turned bearish ({sc:+.2f})"):
+                actions.append(f"SOLD {shares:.2f} {ticker} @ ${price:.2f} ({sc:+.2f})")
 
-    # --- 2. Entries / adds: top conviction names ----------------------------
+    # --- 2. Entries / adds: top agent-score names ---------------------------
     equity = portfolio.equity(prices)
-    candidates = sorted(
-        [s for s in sugg if s["composite"] >= MIN_CONVICTION_TO_BUY],
-        key=lambda s: s["composite"], reverse=True,
-    )
+    scored = [(adef.score(s), s) for s in sugg]
+    candidates = sorted([x for x in scored if x[0] >= adef.buy_threshold],
+                        key=lambda x: x[0], reverse=True)
 
-    for s in candidates:
+    for sc, s in candidates:
+        if len(portfolio.positions) >= adef.max_positions and s["ticker"] not in portfolio.positions:
+            continue
         ticker, price = s["ticker"], s["price"]
         vol = s.get("indicators", {}).get("volatility", 0.3)
-        target_val = _target_weight(s["composite"], vol) * equity
-
-        current_val = 0.0
-        if ticker in portfolio.positions:
-            current_val = portfolio.positions[ticker].market_value(price)
-
+        target_val = _target_weight(adef, sc, vol) * equity
+        current_val = (portfolio.positions[ticker].market_value(price)
+                       if ticker in portfolio.positions else 0.0)
         gap = target_val - current_val
-        min_cash = equity * CASH_RESERVE_PCT
-        investable = max(portfolio.cash - min_cash, 0)
+        investable = max(portfolio.cash - equity * CASH_RESERVE_PCT, 0)
         spend = min(gap, investable)
-        if spend < max(price, equity * 0.01):   # skip dust trades
+        if spend < max(price, equity * 0.01):       # skip dust
             continue
         shares = spend / price
         if portfolio.buy(ticker, shares, price,
-                         f"high conviction ({s['composite']:+.2f}), "
-                         f"target {target_val/equity*100:.0f}% weight"):
-            actions.append(f"BOUGHT {shares:.2f} {ticker} @ ${price:.2f} "
-                           f"(signal {s['composite']:+.2f})")
+                         f"{adef.name}: conviction {sc:+.2f}"):
+            actions.append(f"BOUGHT {shares:.2f} {ticker} @ ${price:.2f} ({sc:+.2f})")
 
     if not actions:
         actions.append("No trades — holdings already aligned with signals.")
 
-    portfolio.record_equity(prices)
+    curve = portfolio.record_equity(prices)
     portfolio.save()
-    portfolio.publish_view(prices)  # precomputed snapshot for the read-only site
-
+    snapshot = portfolio.snapshot(prices)
     return {
-        "ran_at": datetime.now().isoformat(timespec="seconds"),
+        "id": adef.id,
         "actions": actions,
-        "snapshot": portfolio.snapshot(prices),
+        "snapshot": snapshot,
+        "recent_trades": portfolio.recent_trades(),
+        "curve": curve,
     }
+
+
+def run_competition(suggestions: dict) -> dict:
+    """Run all agents, then publish the combined competition view + curves."""
+    agents_out = []
+    curves: dict[str, list] = {}
+    for adef in AGENTS:
+        log = run_cycle(adef, suggestions)
+        curves[adef.id] = log["curve"]
+        agents_out.append({
+            "id": adef.id, "name": adef.name, "style": adef.style,
+            "blurb": adef.blurb, "color": adef.color,
+            "snapshot": log["snapshot"], "recent_trades": log["recent_trades"],
+            "actions": log["actions"],
+        })
+
+    leaderboard = sorted(
+        ({"id": a["id"], "name": a["name"], "style": a["style"], "color": a["color"],
+          "equity": a["snapshot"]["equity"], "return_pct": a["snapshot"]["total_return_pct"],
+          "num_positions": a["snapshot"]["num_positions"]} for a in agents_out),
+        key=lambda x: x["return_pct"], reverse=True)
+
+    view = {
+        "updated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "agents": agents_out,
+        "leaderboard": leaderboard,
+    }
+    store.write_json("agents_view", view)
+    store.write_json("equity_curves", curves)
+    return view

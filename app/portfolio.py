@@ -37,26 +37,27 @@ class Trade:
 
 @dataclass
 class Portfolio:
+    agent_id: str = "default"
     cash: float = STARTING_CASH
     positions: dict[str, Position] = field(default_factory=dict)
     trades: list[Trade] = field(default_factory=list)
     created: str = field(default_factory=_now)
 
-    # --- persistence ---------------------------------------------------------
+    # --- persistence (one KV key per agent) ----------------------------------
     @classmethod
-    def load(cls) -> "Portfolio":
-        raw = store.read_json("portfolio")
+    def load(cls, agent_id: str = "default") -> "Portfolio":
+        raw = store.read_json(f"pf:{agent_id}")
         if not raw:
-            p = cls()
+            p = cls(agent_id=agent_id)
             p.save()
             return p
         positions = {t: Position(**d) for t, d in raw.get("positions", {}).items()}
         trades = [Trade(**t) for t in raw.get("trades", [])]
-        return cls(cash=raw["cash"], positions=positions, trades=trades,
-                   created=raw.get("created", _now()))
+        return cls(agent_id=agent_id, cash=raw["cash"], positions=positions,
+                   trades=trades, created=raw.get("created", _now()))
 
     def save(self) -> None:
-        store.write_json("portfolio", {
+        store.write_json(f"pf:{self.agent_id}", {
             "cash": self.cash,
             "positions": {t: asdict(p) for t, p in self.positions.items()},
             "trades": [asdict(t) for t in self.trades],
@@ -130,22 +131,16 @@ class Portfolio:
             "created": self.created,
         }
 
-    # --- equity curve --------------------------------------------------------
-    def record_equity(self, prices: dict[str, float]) -> None:
-        history = store.read_json("equity_history") or []
+    # --- equity curve (per agent) --------------------------------------------
+    def record_equity(self, prices: dict[str, float]) -> list[dict]:
+        history = store.read_json(f"eq:{self.agent_id}") or []
         history.append({"date": datetime.now().strftime("%Y-%m-%d"),
                         "equity": round(self.equity(prices), 2)})
         # keep one point per day (latest wins)
         dedup = {h["date"]: h for h in history}
-        store.write_json("equity_history",
-                         sorted(dedup.values(), key=lambda h: h["date"]))
+        curve = sorted(dedup.values(), key=lambda h: h["date"])
+        store.write_json(f"eq:{self.agent_id}", curve)
+        return curve
 
     def recent_trades(self, n: int = 25) -> list[dict]:
         return [asdict(t) for t in self.trades[-n:][::-1]]
-
-    def publish_view(self, prices: dict[str, float], n_trades: int = 25) -> None:
-        """Store a precomputed snapshot so a read-only frontend needs no prices."""
-        store.write_json("portfolio_view", {
-            "snapshot": self.snapshot(prices),
-            "recent_trades": self.recent_trades(n_trades),
-        })

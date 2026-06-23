@@ -189,6 +189,14 @@
   .step h4{margin:6px 0 6px;font-size:15px}
   .step p{margin:0;font-size:13px;color:var(--muted);line-height:1.55}
   .home-disc{text-align:center;color:var(--faint);font-size:12.5px;margin-top:40px;max-width:620px;margin-left:auto;margin-right:auto}
+
+  /* ---- competition ---- */
+  .lbcard{display:flex;flex-direction:column;gap:4px}
+  .lbcard .lbtop{display:flex;align-items:center;justify-content:space-between}
+  .lbcard .rank{font-size:18px;font-weight:700}
+  .lbcard .lbname{font-size:20px;font-weight:700;margin-top:2px}
+  .lbcard .lbret{font-size:26px;font-weight:800;letter-spacing:-.5px}
+  #agentTabs .chip .muted{font-weight:400}
 </style>
 </head>
 <body>
@@ -201,8 +209,7 @@
     <button data-tab="overview">Overview</button>
     <button data-tab="markets">Markets</button>
     <button data-tab="signals">Signals</button>
-    <button data-tab="portfolio">Portfolio</button>
-    <button data-tab="trades">Trades</button>
+    <button data-tab="competition">Competition</button>
   </nav>
   <div class="right">
     <span id="llmBadge" class="badge">AI: …</span>
@@ -219,37 +226,41 @@
     <div class="hero">
       <span class="kicker">AI-powered market intelligence</span>
       <h1>Terravue</h1>
-      <p class="lede">A daily stock-market analyst and an autonomous AI agent that screens the whole market,
-        scores every name with four technical strategies, and trades its own paper portfolio on the signals — hands-free.</p>
+      <p class="lede">Three AI agents — Apex, Sage and Atlas — screen the top 1,000 US stocks every day,
+        each trading its own paper portfolio with a different strategy, competing head-to-head to maximize returns.</p>
       <div class="cta">
-        <button class="btn lg" onclick="showTab('overview')">Open the dashboard</button>
+        <button class="btn lg" onclick="showTab('competition')">See the competition</button>
         <button class="btn lg ghost" onclick="showTab('signals')">Browse signals</button>
       </div>
       <div class="stat-row" id="homeStats"></div>
     </div>
 
+    <h2 class="sec">Meet the agents</h2>
+    <div class="features">
+      <div class="feat" onclick="showTab('competition')"><div class="ic" style="background:var(--blue)">▲</div>
+        <h3>Apex · Momentum</h3><p>Chases the strongest trends and breakouts. Aggressive and concentrated — up to 10 high-conviction names.</p></div>
+      <div class="feat" onclick="showTab('competition')"><div class="ic" style="background:var(--lime2)">◆</div>
+        <h3>Sage · Contrarian value</h3><p>Buys oversold, beaten-down stocks betting on the bounce. Patient and broadly diversified.</p></div>
+      <div class="feat" onclick="showTab('competition')"><div class="ic" style="background:var(--sage)">●</div>
+        <h3>Atlas · Balanced</h3><p>A risk-managed blend of trend, momentum and breakout signals across ~15 positions.</p></div>
+    </div>
+
     <h2 class="sec">What's inside</h2>
     <div class="features">
-      <div class="feat" onclick="showTab('overview')"><div class="ic" style="background:var(--blue)">◧</div>
-        <h3>Overview</h3><p>The daily market read: index strip, breadth, signal mix, and the day's top movers at a glance.</p></div>
-      <div class="feat" onclick="showTab('markets')"><div class="ic" style="background:var(--steel)">◨</div>
-        <h3>Markets</h3><p>Index and sector ETFs plus the strongest and weakest names ranked by composite signal.</p></div>
+      <div class="feat" onclick="showTab('competition')"><div class="ic" style="background:var(--blue)">◔</div>
+        <h3>Competition</h3><p>Live leaderboard, equity-curve race, and each agent's holdings, allocation and trade log.</p></div>
+      <div class="feat" onclick="showTab('overview')"><div class="ic" style="background:var(--steel)">◧</div>
+        <h3>Overview</h3><p>The daily market read: index strip, breadth, signal mix, and the day's top movers.</p></div>
       <div class="feat" onclick="showTab('signals')"><div class="ic" style="background:var(--lime1)">⌕</div>
-        <h3>Signal screener</h3><p>Every name scored from trend, RSI, MACD and breakout. Search, filter and sort hundreds of stocks.</p></div>
-      <div class="feat" onclick="showTab('portfolio')"><div class="ic" style="background:var(--lime2)">◔</div>
-        <h3>AI portfolio</h3><p>An autonomous paper portfolio with risk-sized positions, an equity curve and a live allocation breakdown.</p></div>
-      <div class="feat" onclick="showTab('trades')"><div class="ic" style="background:var(--sage)">⇄</div>
-        <h3>Trade log</h3><p>Every buy and sell the agent makes, with the reasoning behind each decision.</p></div>
-      <div class="feat" onclick="runAgent()"><div class="ic" style="background:var(--blue)">▶</div>
-        <h3>Run the agent</h3><p>Refresh today's analysis and let the agent rebalance its portfolio on the latest signals.</p></div>
+        <h3>Signal screener</h3><p>All 1,000 names scored from trend, RSI, MACD and breakout. Search, filter and sort.</p></div>
     </div>
 
     <h2 class="sec">How it works</h2>
     <div class="steps">
-      <div class="step"><div class="num">01</div><h4>Pull the data</h4><p>Daily prices for ~550 names — the S&amp;P 500, Nasdaq-100 and major ETFs — from Yahoo Finance.</p></div>
+      <div class="step"><div class="num">01</div><h4>Pull the data</h4><p>Daily prices for the top ~1,000 US stocks (S&amp;P 500 / 400 / 600) plus major ETFs from Yahoo Finance.</p></div>
       <div class="step"><div class="num">02</div><h4>Score every name</h4><p>Four technical strategies blend into one conviction score and a BUY / HOLD / SELL call per stock.</p></div>
-      <div class="step"><div class="num">03</div><h4>Write the read</h4><p>A plain-English daily note summarizes the setups — rule-based, or written by Claude when enabled.</p></div>
-      <div class="step"><div class="num">04</div><h4>Trade it</h4><p>The agent sizes positions by conviction and volatility, then runs automatically every weekday after the close.</p></div>
+      <div class="step"><div class="num">03</div><h4>Three agents trade</h4><p>Apex, Sage and Atlas each rank the names their own way and rebalance their own paper portfolios.</p></div>
+      <div class="step"><div class="num">04</div><h4>Compete daily</h4><p>They run automatically every weekday after the close; the leaderboard tracks who's winning.</p></div>
     </div>
 
     <p class="home-disc">Terravue is an educational paper-trading simulation on delayed market data.
@@ -309,27 +320,30 @@
     <div class="tablewrap"><table id="suggTable"><thead></thead><tbody></tbody></table></div>
   </section>
 
-  <!-- PORTFOLIO -->
-  <section class="panel" id="tab-portfolio">
-    <h1 class="page-h">AI paper portfolio</h1>
-    <p class="page-sub" id="pfCreated">Autonomous agent — risk-sized positions driven by the daily signals.</p>
-    <div class="grid cards4" id="pfMetrics" style="margin-top:18px"></div>
+  <!-- COMPETITION -->
+  <section class="panel" id="tab-competition">
+    <h1 class="page-h">Agent competition</h1>
+    <p class="page-sub" id="compSub">Three AI agents, three strategies, one scoreboard. Each starts with $100,000.</p>
 
-    <h2 class="sec">Equity curve</h2>
+    <h2 class="sec">Leaderboard</h2>
+    <div class="grid" id="leaderboard" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr))"></div>
+
+    <h2 class="sec">Equity race</h2>
     <div class="card"><div id="equityWrap"><canvas id="equityChart"></canvas></div></div>
 
-    <h2 class="sec">Holdings allocation</h2>
+    <h2 class="sec">Agent detail</h2>
+    <div class="toolbar" id="agentTabs"></div>
+
+    <div class="grid cards4" id="agMetrics"></div>
+
+    <h2 class="sec" style="margin-top:20px">Holdings allocation</h2>
     <div class="card alloc"><div class="alloc-chart"><canvas id="allocChart"></canvas></div><div class="alloc-legend" id="allocLegend"></div></div>
 
     <h2 class="sec">Holdings <span class="muted small" style="text-transform:none;letter-spacing:0;font-weight:400">— click a column to sort</span></h2>
     <div class="tablewrap"><table id="holdTable"><thead></thead><tbody></tbody></table></div>
-  </section>
 
-  <!-- TRADES -->
-  <section class="panel" id="tab-trades">
-    <h1 class="page-h">Trade activity</h1>
-    <p class="page-sub">Every buy and sell the agent has executed, newest first.</p>
-    <div class="tablewrap" style="margin-top:16px"><table id="tradeTable"><thead></thead><tbody></tbody></table></div>
+    <h2 class="sec">Recent trades</h2>
+    <div class="tablewrap"><table id="tradeTable"><thead></thead><tbody></tbody></table></div>
   </section>
 
   <div class="footer">
@@ -377,33 +391,35 @@ function initTable(id,columns,rows,sortKey,empty){tableState[id]={rows,columns,e
 function showTab(name){
   $$('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));
   $$('.panel').forEach(p=>p.classList.toggle('active',p.id==='tab-'+name));
-  if(name==='portfolio'){buildCharts(); requestAnimationFrame(()=>{Object.values(charts).forEach(c=>c&&c.resize());});}
+  if(name==='competition'){requestAnimationFrame(()=>{Object.values(charts).forEach(c=>c&&c.resize());});}
   window.scrollTo({top:0});
 }
 $$('#nav button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
 
 /* ---------- load ---------- */
 async function load(){
-  const [sugg,port,hist,status]=await Promise.all([
+  const [sugg,agents,curves,status]=await Promise.all([
     fetch('/api/suggestions').then(r=>r.json()),
-    fetch('/api/portfolio').then(r=>r.json()),
+    fetch('/api/agents').then(r=>r.json()),
     fetch('/api/equity-history').then(r=>r.json()),
     fetch('/api/status').then(r=>r.json()),
   ]);
-  DATA={sugg,port,hist};
+  DATA={sugg,agents,curves};
   renderStatus(status);
-  renderStrip(); renderHome(status); renderOverview(); renderMarkets(); renderSignals(); renderPortfolio();
+  renderStrip(); renderHome(status); renderOverview(); renderMarkets(); renderSignals(); renderCompetition();
 }
 
+function leader(){return (DATA.agents.leaderboard||[])[0]||null;}
+
 function renderHome(status){
-  const d=DATA.sugg, s=DATA.port.snapshot;
+  const d=DATA.sugg, lead=leader();
   const buys=d.suggestions.filter(x=>x.action==='BUY').length;
   const stat=(n,l)=>`<div class="s"><div class="n">${n}</div><div class="l">${l}</div></div>`;
   $('#homeStats').innerHTML=
     stat((status.universe_size||d.suggestions.length),'stocks tracked')+
-    stat(buys,'buy signals today')+
-    stat(pct(s.total_return_pct),'portfolio return')+
-    stat(s.num_positions,'live positions');
+    stat('3','AI agents')+
+    stat(lead?lead.name:'—','current leader')+
+    stat(lead?pct(lead.return_pct):'—','leader return');
 }
 
 let READONLY=false;
@@ -428,12 +444,12 @@ function metric(label,value,delta,dcls){return `<div class="card metric"><div cl
   <div class="value">${value}</div>${delta!=null?`<div class="delta ${dcls||''}">${delta}</div>`:''}</div>`;}
 
 function renderOverview(){
-  const d=DATA.sugg, s=DATA.port.snapshot;
+  const d=DATA.sugg, lead=leader();
   $('#ovDate').textContent='As of '+(d.date||'—')+' · '+(d.suggestions?.length||0)+' names analyzed · narrative: '+(d.narrative_source==='claude'?'Claude':'rule-based');
-  const tot=s.total_return_pct, buys=d.suggestions.filter(x=>x.action==='BUY').length;
+  const buys=d.suggestions.filter(x=>x.action==='BUY').length;
   $('#ovMetrics').innerHTML=
-    metric('Portfolio equity',money(s.equity),pct(tot)+' all-time',cls(tot))+
-    metric('Cash',money(s.cash),s.num_positions+' positions held')+
+    metric('Leader',lead?lead.name:'—',lead?pct(lead.return_pct)+' return':'',lead?cls(lead.return_pct):'')+
+    metric('Agents competing','3','Apex · Sage · Atlas')+
     metric('Buy signals today',buys,'of '+d.suggestions.length+' names')+
     metric('Avg signal',(d.suggestions.reduce((a,x)=>a+x.composite,0)/Math.max(d.suggestions.length,1)).toFixed(2),'composite score');
 
@@ -513,71 +529,102 @@ function applyFilter(){const q=$('#search').value.trim().toUpperCase();
   if(q)rows=rows.filter(s=>s.ticker.includes(q));
   tableState['suggTable'].rows=rows;drawTable('suggTable');}
 
-/* ---------- portfolio ---------- */
-function renderPortfolio(){
-  const s=DATA.port.snapshot,tot=s.total_return_pct;
-  if(s.created)$('#pfCreated').textContent='Started '+new Date(s.created).toLocaleDateString()+' with '+money0(s.starting_cash)+' · '+(DATA.port.recent_trades||[]).length+' recent trades';
-  $('#pfMetrics').innerHTML=
-    metric('Total equity',money(s.equity),pct(tot),cls(tot))+
-    metric('Total return',pct(tot),'vs '+money0(s.starting_cash)+' start',cls(tot))+
+/* ---------- competition ---------- */
+let selectedAgent=null;
+function agentById(id){return (DATA.agents.agents||[]).find(a=>a.id===id);}
+
+function renderCompetition(){
+  const lb=DATA.agents.leaderboard||[], agents=DATA.agents.agents||[];
+  if(DATA.agents.updated)$('#compSub').textContent='Updated '+new Date(DATA.agents.updated).toLocaleString()+' · each agent started with $100,000.';
+  $('#leaderboard').innerHTML=lb.map((a,i)=>{
+    const medal=['🥇','🥈','🥉'][i]||('#'+(i+1));
+    return `<div class="card lbcard" style="border-top:3px solid ${a.color}">
+      <div class="lbtop"><span class="rank">${medal}</span><span class="muted small">${a.style}</span></div>
+      <div class="lbname">${a.name}</div>
+      <div class="lbret ${cls(a.return_pct)}">${pct(a.return_pct)}</div>
+      <div class="muted small">${money(a.equity)} · ${a.num_positions} positions</div>
+    </div>`;}).join('')||'<p class="empty">No competition data yet — run the daily job.</p>';
+
+  if(!selectedAgent && agents.length)selectedAgent=(lb[0]||agents[0]).id;
+  $('#agentTabs').innerHTML=agents.map(a=>
+    `<span class="chip ${a.id===selectedAgent?'active':''}" onclick="selectAgent('${a.id}')">${a.name} <span class="muted">· ${a.style}</span></span>`).join('');
+  buildEquityRace();
+  renderAgentDetail();
+}
+function selectAgent(id){selectedAgent=id;
+  $$('#agentTabs .chip').forEach(c=>c.classList.toggle('active',c.textContent.trim().startsWith(agentById(id).name)));
+  renderAgentDetail();}
+
+function holdCols(){return [
+  {key:'ticker',label:'Ticker',defaultDir:'asc',get:h=>h.ticker,cell:h=>`<td class="b">${h.ticker}</td>`},
+  {key:'shares',label:'Shares',num:true,get:h=>h.shares,cell:h=>`<td class="num">${fmt(h.shares)}</td>`},
+  {key:'avg',label:'Avg cost',num:true,get:h=>h.avg_cost,cell:h=>`<td class="num">${money(h.avg_cost)}</td>`},
+  {key:'price',label:'Price',num:true,get:h=>h.price,cell:h=>`<td class="num">${money(h.price)}</td>`},
+  {key:'mv',label:'Value',num:true,get:h=>h.market_value,cell:h=>`<td class="num">${money(h.market_value)}</td>`},
+  {key:'unr',label:'Unrealized',num:true,get:h=>h.unrealized_pct,cell:h=>`<td class="num ${cls(h.unrealized)}">${money(h.unrealized)} (${pct(h.unrealized_pct)})</td>`},
+  {key:'wt',label:'Weight',num:true,get:h=>h.weight,cell:h=>`<td class="num">${h.weight}%</td>`},
+];}
+function tradeCols(){return [
+  {key:'when',label:'When',get:t=>new Date(t.timestamp).getTime(),cell:t=>`<td class="small muted">${new Date(t.timestamp).toLocaleString()}</td>`},
+  {key:'side',label:'Side',defaultDir:'asc',get:t=>t.side,cell:t=>`<td><span class="pill ${t.side}">${t.side}</span></td>`},
+  {key:'ticker',label:'Ticker',defaultDir:'asc',get:t=>t.ticker,cell:t=>`<td class="b">${t.ticker}</td>`},
+  {key:'shares',label:'Shares',num:true,get:t=>t.shares,cell:t=>`<td class="num">${fmt(t.shares)}</td>`},
+  {key:'price',label:'Price',num:true,get:t=>t.price,cell:t=>`<td class="num">${money(t.price)}</td>`},
+  {key:'rationale',label:'Rationale',defaultDir:'asc',get:t=>t.rationale,cell:t=>`<td class="small muted">${t.rationale}</td>`},
+];}
+
+function renderAgentDetail(){
+  const a=agentById(selectedAgent); if(!a){return;}
+  const s=a.snapshot,tot=s.total_return_pct;
+  $('#agMetrics').innerHTML=
+    metric('Equity',money(s.equity),pct(tot),cls(tot))+
+    metric('Return',pct(tot),'vs '+money0(s.starting_cash)+' start',cls(tot))+
     metric('Cash',money(s.cash),(s.cash/Math.max(s.equity,1)*100).toFixed(0)+'% of equity')+
     metric('Positions',s.num_positions,money(s.positions_value)+' invested');
-
-  const hcols=[
-    {key:'ticker',label:'Ticker',defaultDir:'asc',get:h=>h.ticker,cell:h=>`<td class="b">${h.ticker}</td>`},
-    {key:'shares',label:'Shares',num:true,get:h=>h.shares,cell:h=>`<td class="num">${fmt(h.shares)}</td>`},
-    {key:'avg',label:'Avg cost',num:true,get:h=>h.avg_cost,cell:h=>`<td class="num">${money(h.avg_cost)}</td>`},
-    {key:'price',label:'Price',num:true,get:h=>h.price,cell:h=>`<td class="num">${money(h.price)}</td>`},
-    {key:'mv',label:'Value',num:true,get:h=>h.market_value,cell:h=>`<td class="num">${money(h.market_value)}</td>`},
-    {key:'unr',label:'Unrealized',num:true,get:h=>h.unrealized_pct,cell:h=>`<td class="num ${cls(h.unrealized)}">${money(h.unrealized)} (${pct(h.unrealized_pct)})</td>`},
-    {key:'wt',label:'Weight',num:true,get:h=>h.weight,cell:h=>`<td class="num">${h.weight}%</td>`},
-  ];
-  initTable('holdTable',hcols,s.holdings||[],'mv','No open positions yet — run the agent.');
-
-  const tcols=[
-    {key:'when',label:'When',get:t=>new Date(t.timestamp).getTime(),cell:t=>`<td class="small muted">${new Date(t.timestamp).toLocaleString()}</td>`},
-    {key:'side',label:'Side',defaultDir:'asc',get:t=>t.side,cell:t=>`<td><span class="pill ${t.side}">${t.side}</span></td>`},
-    {key:'ticker',label:'Ticker',defaultDir:'asc',get:t=>t.ticker,cell:t=>`<td class="b">${t.ticker}</td>`},
-    {key:'shares',label:'Shares',num:true,get:t=>t.shares,cell:t=>`<td class="num">${fmt(t.shares)}</td>`},
-    {key:'price',label:'Price',num:true,get:t=>t.price,cell:t=>`<td class="num">${money(t.price)}</td>`},
-    {key:'rationale',label:'Rationale',defaultDir:'asc',get:t=>t.rationale,cell:t=>`<td class="small muted">${t.rationale}</td>`},
-  ];
-  initTable('tradeTable',tcols,DATA.port.recent_trades||[],'when','No trades yet.');
+  initTable('holdTable',holdCols(),s.holdings||[],'mv','No open positions.');
+  initTable('tradeTable',tradeCols(),a.recent_trades||[],'when','No trades yet.');
+  buildAllocChart(s);
 }
 
-/* ---------- charts (built lazily when portfolio tab opens) ---------- */
 function allocColor(i,n){return `hsl(${Math.round((i*360/Math.max(n,1)+205)%360)} 55% 60%)`;}
-function buildCharts(){
-  const s=DATA.port.snapshot, hist=DATA.hist||[];
-  if(!charts.equity){
-    charts.equity=new Chart($('#equityChart'),{type:'line',
-      data:{labels:hist.map(h=>h.date),datasets:[{data:hist.map(h=>h.equity),
-        borderColor:'#3F7CAC',backgroundColor:'rgba(63,124,172,.16)',fill:true,tension:.25,
-        pointRadius:hist.length>30?0:3,pointBackgroundColor:'#E2F89C',borderWidth:2.5}]},
-      options:{responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>money(c.parsed.y)}}},
-        scales:{x:{grid:{color:'rgba(255,255,255,.05)'},ticks:{color:'#8ea4af',maxTicksLimit:8}},
-          y:{grid:{color:'rgba(255,255,255,.05)'},ticks:{color:'#8ea4af',callback:v=>'$'+(v/1000).toFixed(0)+'k'}}}}});
-  }
-  if(!charts.alloc){
-    const h=[...(s.holdings||[])].sort((a,b)=>b.market_value-a.market_value);
-    const labels=h.map(x=>x.ticker).concat('Cash'),vals=h.map(x=>x.market_value).concat(s.cash);
-    const eq=s.equity||vals.reduce((a,b)=>a+b,0);
-    const colors=h.map((_,i)=>allocColor(i,h.length)).concat('#5b6b78');
-    charts.alloc=new Chart($('#allocChart'),{type:'doughnut',
-      data:{labels,datasets:[{data:vals,backgroundColor:colors,borderColor:'#131d27',borderWidth:2}]},
-      options:{responsive:true,maintainAspectRatio:false,cutout:'58%',
-        plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.label}: ${money(c.parsed)} (${(c.parsed/eq*100).toFixed(1)}%)`}}}}});
-    $('#allocLegend').innerHTML=labels.length?labels.map((lab,i)=>{const w=(vals[i]/eq*100).toFixed(1);
-      return `<div class="leg"><span class="dot" style="background:${colors[i]}"></span><span class="nm">${lab}</span><span class="wt">${w}%</span></div>`;}).join('')
-      :'<span class="muted small">No holdings yet.</span>';
-  }
+function buildAllocChart(s){
+  if(charts.alloc){charts.alloc.destroy();charts.alloc=null;}
+  const h=[...(s.holdings||[])].sort((a,b)=>b.market_value-a.market_value);
+  const labels=h.map(x=>x.ticker).concat('Cash'),vals=h.map(x=>x.market_value).concat(s.cash);
+  const eq=s.equity||vals.reduce((a,b)=>a+b,0)||1;
+  const colors=h.map((_,i)=>allocColor(i,h.length)).concat('#5b6b78');
+  charts.alloc=new Chart($('#allocChart'),{type:'doughnut',
+    data:{labels,datasets:[{data:vals,backgroundColor:colors,borderColor:'#131d27',borderWidth:2}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'58%',
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.label}: ${money(c.parsed)} (${(c.parsed/eq*100).toFixed(1)}%)`}}}}});
+  $('#allocLegend').innerHTML=labels.length?labels.map((lab,i)=>{const w=(vals[i]/eq*100).toFixed(1);
+    return `<div class="leg"><span class="dot" style="background:${colors[i]}"></span><span class="nm">${lab}</span><span class="wt">${w}%</span></div>`;}).join('')
+    :'<span class="muted small">No holdings yet.</span>';
+}
+
+function buildEquityRace(){
+  if(charts.equity){charts.equity.destroy();charts.equity=null;}
+  const curves=DATA.curves||{}, agents=DATA.agents.agents||[];
+  const dateset=new Set(); Object.values(curves).forEach(arr=>(arr||[]).forEach(p=>dateset.add(p.date)));
+  const labels=[...dateset].sort();
+  const ds=agents.map(a=>{
+    const map=Object.fromEntries((curves[a.id]||[]).map(p=>[p.date,p.equity]));
+    return {label:a.name,data:labels.map(d=>map[d]??null),borderColor:a.color,
+      backgroundColor:'transparent',tension:.25,pointRadius:labels.length>30?0:3,
+      pointBackgroundColor:a.color,borderWidth:2.5,spanGaps:true};
+  });
+  charts.equity=new Chart($('#equityChart'),{type:'line',data:{labels,datasets:ds},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:true,labels:{color:'#cfe0ea',usePointStyle:true,boxWidth:8,padding:16}},
+        tooltip:{callbacks:{label:c=>c.dataset.label+': '+money(c.parsed.y)}}},
+      scales:{x:{grid:{color:'rgba(255,255,255,.05)'},ticks:{color:'#8ea4af',maxTicksLimit:8}},
+        y:{grid:{color:'rgba(255,255,255,.05)'},ticks:{color:'#8ea4af',callback:v=>'$'+(v/1000).toFixed(0)+'k'}}}}});
 }
 
 async function runAgent(){
-  if(READONLY){alert('This is the live read-only site. The agent runs automatically after each market close and publishes results here.');return;}
+  if(READONLY){alert('This is the live read-only site. The agents run automatically after each market close and publish results here.');return;}
   const b=$('#runBtn');b.disabled=true;b.innerHTML='<span class="spinner"></span> Running…';
-  try{await fetch('/api/run-agent',{method:'POST'});charts={};await load();}
+  try{await fetch('/api/run-agent',{method:'POST'});charts={};selectedAgent=null;await load();}
   catch(e){alert('Run failed: '+e);}
   b.disabled=false;b.textContent='Run agent';}
 

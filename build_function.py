@@ -59,19 +59,14 @@ def suggestions():
     }
 
 
-@app.get("/api/portfolio")
-def portfolio():
-    return store.read_json("portfolio_view") or {
-        "snapshot": {"cash": 0, "positions_value": 0, "equity": 0,
-                     "starting_cash": 0, "total_return_pct": 0, "holdings": [],
-                     "num_positions": 0, "created": None},
-        "recent_trades": [],
-    }
+@app.get("/api/agents")
+def agents():
+    return store.read_json("agents_view") or {"agents": [], "leaderboard": []}
 
 
 @app.get("/api/equity-history")
 def equity_history():
-    return store.read_json("equity_history") or []
+    return store.read_json("equity_curves") or {}
 
 
 @app.post("/api/run-agent")

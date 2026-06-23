@@ -4,10 +4,9 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 
-from . import advisor, data, store
+from . import advisor, store
 from .config import BASE_DIR, LLM_ENABLED
-from .agent import run_cycle
-from .portfolio import Portfolio
+from .agent import run_competition
 from .universe import get_universe
 
 app = FastAPI(title="Stock Advisor + Paper Trading Agent")
@@ -36,29 +35,21 @@ def get_suggestions(refresh: bool = False):
     return result
 
 
-@app.get("/api/portfolio")
-def get_portfolio():
-    p = Portfolio.load()
-    prices = {}
-    for t in p.positions:
-        price = data.latest_price(t)
-        if price:
-            prices[t] = price
-    return {
-        "snapshot": p.snapshot(prices),
-        "recent_trades": p.recent_trades(),
-    }
+@app.get("/api/agents")
+def get_agents():
+    return store.read_json("agents_view") or {"agents": [], "leaderboard": []}
 
 
 @app.get("/api/equity-history")
 def equity_history():
-    return store.read_json("equity_history") or []
+    return store.read_json("equity_curves") or {}
 
 
 @app.post("/api/run-agent")
 def run_agent(refresh: bool = True):
-    """Generate fresh suggestions and let the agent trade on them."""
+    """Generate fresh suggestions and let all three agents trade on them."""
     suggestions = (advisor.generate_suggestions() if refresh
                    else (advisor.load_suggestions() or advisor.generate_suggestions()))
-    log = run_cycle(suggestions)
-    return JSONResponse({"suggestions": suggestions, "agent": log})
+    view = run_competition(suggestions)
+    return JSONResponse({"suggestions_count": len(suggestions["suggestions"]),
+                         "competition": view})
