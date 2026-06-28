@@ -12,3 +12,4 @@ data/cron.log
 .env.vercel
 .env.prod
 data/portfolio_view.json
+.tools/
