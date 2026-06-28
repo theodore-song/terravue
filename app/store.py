@@ -41,8 +41,40 @@ def _command(args: list[str]):
         return json.loads(resp.read().decode()).get("result")
 
 
+def _pipeline(commands: list[list]):
+    """Run many Redis commands in one Upstash REST call."""
+    req = urllib.request.Request(
+        _URL + "/pipeline",
+        data=json.dumps(commands).encode(),
+        headers={"Authorization": f"Bearer {_TOKEN}",
+                 "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, context=_CTX, timeout=30) as resp:
+        return json.loads(resp.read().decode())
+
+
 def _file(key: str):
     return DATA_DIR / f"{key}.json"
+
+
+def write_many(mapping: dict[str, object], chunk: int = 150) -> int:
+    """Write many key->obj pairs efficiently (pipelined to KV; files locally)."""
+    items = [(k, json.dumps(v)) for k, v in mapping.items()]
+    written = 0
+    if USE_KV:
+        for i in range(0, len(items), chunk):
+            batch = items[i:i + chunk]
+            try:
+                _pipeline([["SET", k, v] for k, v in batch])
+                written += len(batch)
+            except Exception as exc:
+                print(f"[store] pipeline write failed: {exc}")
+    for k, v in items:
+        try:
+            _file(k).write_text(v)
+        except OSError:
+            pass
+    return written or len(items)
 
 
 def read_json(key: str, default=None):

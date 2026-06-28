@@ -40,6 +40,17 @@ def get_agents():
     return store.read_json("agents_view") or {"agents": [], "leaderboard": []}
 
 
+@app.get("/api/stock/{ticker}")
+def get_stock(ticker: str):
+    from . import stockinfo
+    av = store.read_json("agents_view")
+    pre = store.read_json("sd:" + ticker.upper().strip())
+    if pre:
+        pre["holders"] = stockinfo._holders_for(ticker.upper().strip(), av)
+        return pre
+    return stockinfo.get_stock_detail(ticker, av)  # fallback (works off non-blocked IPs)
+
+
 @app.get("/api/equity-history")
 def equity_history():
     return store.read_json("equity_curves") or {}

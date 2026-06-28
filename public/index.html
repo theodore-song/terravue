@@ -197,6 +197,40 @@
   .lbcard .lbname{font-size:20px;font-weight:700;margin-top:2px}
   .lbcard .lbret{font-size:26px;font-weight:800;letter-spacing:-.5px}
   #agentTabs .chip .muted{font-weight:400}
+
+  /* ---- clickable tickers + stock modal ---- */
+  .tkr{cursor:pointer;border-bottom:1px dotted rgba(149,175,186,.45)}
+  .tkr:hover{color:var(--lime2);border-bottom-color:var(--lime2)}
+  .modal{display:none;position:fixed;inset:0;z-index:100;background:rgba(6,10,14,.72);
+    backdrop-filter:blur(4px);overflow-y:auto;padding:36px 16px}
+  .modal.open{display:block}
+  .modal-card{max-width:860px;margin:0 auto;background:#101924;border:1px solid var(--border2);
+    border-radius:var(--r-lg);padding:24px 26px;position:relative;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+  .modal-x{position:absolute;top:14px;right:16px;background:none;border:none;color:var(--muted);
+    font-size:26px;line-height:1;cursor:pointer;padding:4px 8px}
+  .modal-x:hover{color:var(--text)}
+  .sk-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;padding-right:30px}
+  .sk-head .nm{font-size:22px;font-weight:700}
+  .sk-head .tk2{font-size:14px;color:var(--muted);font-weight:600}
+  .sk-head .px{font-size:22px;font-weight:700;margin-left:auto}
+  .sk-sub{color:var(--muted);font-size:13px;margin:2px 0 16px}
+  .sk-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:18px}
+  .sk-stat{background:var(--bg2);border-radius:var(--r);padding:10px 12px}
+  .sk-stat .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .sk-stat .v{font-size:16px;font-weight:700;margin-top:3px;font-variant-numeric:tabular-nums}
+  .sk-ranges{display:flex;gap:6px;margin:0 0 8px}
+  .sk-ranges button{font-size:12px;padding:4px 10px;border-radius:7px;border:1px solid var(--border2);
+    background:transparent;color:var(--muted);cursor:pointer}
+  .sk-ranges button.on{background:var(--accent-soft);border-color:var(--blue);color:var(--lime2)}
+  .sk-chart{height:240px;position:relative;margin-bottom:18px}
+  .sk-h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700;margin:18px 0 8px}
+  .sk-fin{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px 18px;font-size:13.5px}
+  .sk-fin .row{display:flex;justify-content:space-between;border-bottom:1px solid var(--border);padding:6px 0}
+  .sk-fin .row .k{color:var(--muted)}
+  .sk-prof{font-size:13.5px;color:#cdd9e1;line-height:1.6}
+  .sk-holders{display:flex;gap:8px;flex-wrap:wrap}
+  .sk-holder{display:flex;align-items:center;gap:7px;background:var(--bg2);border-radius:999px;padding:5px 12px;font-size:12.5px}
+  .sk-holder .dot{width:9px;height:9px;border-radius:50%}
 </style>
 </head>
 <body>
@@ -252,8 +286,8 @@
     <div class="steps">
       <div class="step"><div class="num">01</div><h4>Pull the data</h4><p>Daily prices for the top ~1,000 US stocks (S&amp;P 500 / 400 / 600) plus major ETFs from Yahoo Finance.</p></div>
       <div class="step"><div class="num">02</div><h4>Score every name</h4><p>Four technical strategies blend into one conviction score and a BUY / HOLD / SELL call per stock.</p></div>
-      <div class="step"><div class="num">03</div><h4>Three agents trade</h4><p>Apex, Sage and Atlas each rank the names their own way and rebalance their own paper portfolios.</p></div>
-      <div class="step"><div class="num">04</div><h4>Compete daily</h4><p>They run automatically every weekday after the close; the leaderboard tracks who's winning.</p></div>
+      <div class="step"><div class="num">03</div><h4>Five agents trade</h4><p>Each agent ranks the names its own way and rebalances its own paper portfolio — click any ticker for a full profile.</p></div>
+      <div class="step"><div class="num">04</div><h4>Compete daily</h4><p>They run automatically every weekday after the close (in the cloud); the leaderboard tracks who's winning.</p></div>
     </div>
 
     <p class="home-disc">Terravue is an educational paper-trading simulation on delayed market data.
@@ -345,6 +379,13 @@
   </div>
 </div>
 
+<div id="stockModal" class="modal" onclick="if(event.target===this)closeStock()">
+  <div class="modal-card">
+    <button class="modal-x" onclick="closeStock()" aria-label="Close">&times;</button>
+    <div id="stockBody"></div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
 const $ = s => document.querySelector(s);
@@ -359,6 +400,7 @@ const ETF_SET = ['SPY','QQQ','DIA','IWM','VTI','XLK','XLF','XLE','XLV','XLY','SM
 let DATA = {sugg:null, port:null, hist:null};
 let charts = {};
 let filter = 'ALL';
+const tkr = t => `<span class="tkr" data-tkr="${t}">${t}</span>`;
 
 /* ---------- generic sortable table ---------- */
 const tableState = {};
@@ -431,7 +473,7 @@ function bySymbol(sym){return (DATA.sugg.suggestions||[]).find(s=>s.ticker===sym
 function renderStrip(){
   $('#strip').innerHTML=INDEXES.map(sym=>{const s=bySymbol(sym);if(!s)return'';
     const ch=s.indicators?.chg_1d??0;
-    return `<div class="idx"><div class="nm">${sym}</div>
+    return `<div class="idx tkr" data-tkr="${sym}" style="border-bottom:none"><div class="nm">${sym}</div>
       <div class="px">${money(s.price)}<span class="ch ${cls(ch)}">${pct(ch)}</span></div></div>`;}).join('')
     || '<div class="idx"><div class="nm muted">No index data</div></div>';
 }
@@ -473,14 +515,14 @@ function renderOverview(){
   renderMovers('#losers',[...d.suggestions].sort((a,b)=>(a.indicators?.chg_1d??0)-(b.indicators?.chg_1d??0)).slice(0,6),'chg_1d');
 }
 function renderMovers(sel,list,key){$(sel).innerHTML=list.map(s=>{const v=s.indicators?.[key]??0;
-  return `<div class="mover"><span><span class="tk">${s.ticker}</span><span class="pr">${money(s.price)}</span></span>
+  return `<div class="mover"><span><span class="tk tkr" data-tkr="${s.ticker}">${s.ticker}</span><span class="pr">${money(s.price)}</span></span>
     <span class="b ${cls(v)}">${pct(v)}</span></div>`;}).join('')||'<p class="empty">No data.</p>';}
 
 /* ---------- markets ---------- */
 function renderMarkets(){
   const etfs=(DATA.sugg.suggestions||[]).filter(s=>ETF_SET.includes(s.ticker));
   const cols=[
-    {key:'ticker',label:'ETF',defaultDir:'asc',get:s=>s.ticker,cell:s=>`<td class="b">${s.ticker}</td>`},
+    {key:'ticker',label:'ETF',defaultDir:'asc',get:s=>s.ticker,cell:s=>`<td class="b">${tkr(s.ticker)}</td>`},
     {key:'price',label:'Price',num:true,get:s=>s.price,cell:s=>`<td class="num">${money(s.price)}</td>`},
     {key:'chg',label:'1d',num:true,get:s=>s.indicators?.chg_1d??0,cell:s=>{const v=s.indicators?.chg_1d??0;return `<td class="num ${cls(v)}">${pct(v)}</td>`;}},
     {key:'r1m',label:'1m',num:true,get:s=>s.indicators?.ret_1m??0,cell:s=>{const v=s.indicators?.ret_1m??0;return `<td class="num ${cls(v)}">${pct(v)}</td>`;}},
@@ -494,7 +536,7 @@ function renderMarkets(){
   renderSignalList('#weakest',sorted.slice(-8).reverse());
 }
 function renderSignalList(sel,list){$(sel).innerHTML=list.map(s=>
-  `<div class="mover"><span><span class="tk">${s.ticker}</span><span class="pr">${money(s.price)}</span></span>
+  `<div class="mover"><span><span class="tk tkr" data-tkr="${s.ticker}">${s.ticker}</span><span class="pr">${money(s.price)}</span></span>
    <span><span class="pill ${s.action}">${s.action}</span> <span class="b ${cls(s.composite)}" style="margin-left:8px">${s.composite>=0?'+':''}${s.composite.toFixed(2)}</span></span></div>`).join('')||'<p class="empty">No data.</p>';}
 
 /* ---------- signals screener ---------- */
@@ -504,7 +546,7 @@ function convictionBar(score){const w=Math.min(Math.abs(score)/2,1)*40;
   return `<span class="bar"><i style="${st};background:${c}"></i></span>`;}
 function signalColumns(){return [
   {key:'action',label:'Call',defaultDir:'asc',get:s=>s.action,cell:s=>`<td><span class="pill ${s.action}">${s.action}</span></td>`},
-  {key:'ticker',label:'Ticker',defaultDir:'asc',get:s=>s.ticker,cell:s=>`<td class="b">${s.ticker}</td>`},
+  {key:'ticker',label:'Ticker',defaultDir:'asc',get:s=>s.ticker,cell:s=>`<td class="b">${tkr(s.ticker)}</td>`},
   {key:'price',label:'Price',num:true,get:s=>s.price,cell:s=>`<td class="num">${money(s.price)}</td>`},
   {key:'chg',label:'1d',num:true,get:s=>s.indicators?.chg_1d??0,cell:s=>{const v=s.indicators?.chg_1d??0;return `<td class="num ${cls(v)}">${pct(v)}</td>`;}},
   {key:'comp',label:'Signal',num:true,get:s=>s.composite,cell:s=>`<td class="num ${cls(s.composite)}">${s.composite>=0?'+':''}${s.composite.toFixed(2)}</td>`},
@@ -553,7 +595,7 @@ function selectAgent(id){selectedAgent=id;
   renderAgentDetail();}
 
 function holdCols(){return [
-  {key:'ticker',label:'Ticker',defaultDir:'asc',get:h=>h.ticker,cell:h=>`<td class="b">${h.ticker}</td>`},
+  {key:'ticker',label:'Ticker',defaultDir:'asc',get:h=>h.ticker,cell:h=>`<td class="b">${tkr(h.ticker)}</td>`},
   {key:'shares',label:'Shares',num:true,get:h=>h.shares,cell:h=>`<td class="num">${fmt(h.shares)}</td>`},
   {key:'avg',label:'Avg cost',num:true,get:h=>h.avg_cost,cell:h=>`<td class="num">${money(h.avg_cost)}</td>`},
   {key:'price',label:'Price',num:true,get:h=>h.price,cell:h=>`<td class="num">${money(h.price)}</td>`},
@@ -564,7 +606,7 @@ function holdCols(){return [
 function tradeCols(){return [
   {key:'when',label:'When',get:t=>new Date(t.timestamp).getTime(),cell:t=>`<td class="small muted">${new Date(t.timestamp).toLocaleString()}</td>`},
   {key:'side',label:'Side',defaultDir:'asc',get:t=>t.side,cell:t=>`<td><span class="pill ${t.side}">${t.side}</span></td>`},
-  {key:'ticker',label:'Ticker',defaultDir:'asc',get:t=>t.ticker,cell:t=>`<td class="b">${t.ticker}</td>`},
+  {key:'ticker',label:'Ticker',defaultDir:'asc',get:t=>t.ticker,cell:t=>`<td class="b">${tkr(t.ticker)}</td>`},
   {key:'shares',label:'Shares',num:true,get:t=>t.shares,cell:t=>`<td class="num">${fmt(t.shares)}</td>`},
   {key:'price',label:'Price',num:true,get:t=>t.price,cell:t=>`<td class="num">${money(t.price)}</td>`},
   {key:'rationale',label:'Rationale',defaultDir:'asc',get:t=>t.rationale,cell:t=>`<td class="small muted">${t.rationale}</td>`},
@@ -624,6 +666,102 @@ async function runAgent(){
   try{await fetch('/api/run-agent',{method:'POST'});charts={};selectedAgent=null;await load();}
   catch(e){alert('Run failed: '+e);}
   b.disabled=false;b.textContent='Run agent';}
+
+/* ---------- stock detail modal ---------- */
+let skData=null, skRange='6M';
+document.addEventListener('click', e=>{
+  const el=e.target.closest('.tkr'); if(el) openStock(el.dataset.tkr);
+});
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeStock(); });
+
+function closeStock(){ $('#stockModal').classList.remove('open'); if(charts.sk){charts.sk.destroy();charts.sk=null;} }
+
+async function openStock(ticker){
+  const m=$('#stockModal'); m.classList.add('open');
+  $('#stockBody').innerHTML=`<div class="empty"><span class="spinner" style="border-top-color:var(--blue)"></span> Loading ${ticker}…</div>`;
+  try{
+    const d=await fetch('/api/stock/'+encodeURIComponent(ticker)).then(r=>r.json());
+    skData=d; renderStock(d);
+  }catch(e){ $('#stockBody').innerHTML=`<p class="empty">Couldn't load ${ticker}. ${e}</p>`; }
+}
+
+function bn(n){ // big number formatting (market cap, revenue)
+  if(n==null||isNaN(n))return'—'; const a=Math.abs(n);
+  if(a>=1e12)return '$'+(n/1e12).toFixed(2)+'T'; if(a>=1e9)return '$'+(n/1e9).toFixed(2)+'B';
+  if(a>=1e6)return '$'+(n/1e6).toFixed(2)+'M'; return '$'+Number(n).toLocaleString();
+}
+function pctRaw(n){return n==null||isNaN(n)?'—':(n>=0?'+':'')+Number(n).toFixed(2)+'%';}
+function num(n,d=2){return n==null||isNaN(n)?'—':Number(n).toFixed(d);}
+
+function renderStock(d){
+  if(d.error){ $('#stockBody').innerHTML=`<div class="sk-head"><span class="nm">${d.ticker}</span></div><p class="empty">${d.error}</p>`; return; }
+  const t=d.technicals, f=d.financials, p=d.profile;
+  const stat=(l,v)=>`<div class="sk-stat"><div class="l">${l}</div><div class="v">${v}</div></div>`;
+  const finRow=(k,v)=>`<div class="row"><span class="k">${k}</span><span>${v}</span></div>`;
+  const dy=f.dividendYield!=null?(f.dividendYield*100).toFixed(2)+'%':'—';
+  const pm=f.profitMargin!=null?(f.profitMargin*100).toFixed(1)+'%':'—';
+  const rg=f.revenueGrowth!=null?(f.revenueGrowth*100).toFixed(1)+'%':'—';
+  const upside=(f.targetMeanPrice&&d.price)?` (${pctRaw((f.targetMeanPrice/d.price-1)*100)})`:'';
+  $('#stockBody').innerHTML=`
+    <div class="sk-head">
+      <span class="nm">${d.name||d.ticker}</span><span class="tk2">${d.ticker} · ${d.exchange||''}</span>
+      <span class="px">${d.price!=null?money(d.price):'—'} <span class="${cls(d.chg_1d||0)}" style="font-size:14px">${pctRaw(d.chg_1d)}</span></span>
+    </div>
+    <div class="sk-sub">${[p.sector,p.industry].filter(Boolean).join(' · ')||'—'}</div>
+    <div class="sk-stats">
+      ${stat('Market cap',bn(f.marketCap))}
+      ${stat('P/E (ttm)',num(f.trailingPE))}
+      ${stat('EPS',f.eps!=null?'$'+num(f.eps):'—')}
+      ${stat('Beta',num(f.beta))}
+      ${stat('Div yield',dy)}
+      ${stat('52w range',(d.fiftyTwoWeekLow!=null?money(d.fiftyTwoWeekLow):'—')+' – '+(d.fiftyTwoWeekHigh!=null?money(d.fiftyTwoWeekHigh):'—'))}
+      ${stat('RSI (14)',num(t.rsi14,0))}
+      ${stat('1Y return',pctRaw(t.ret_1y))}
+    </div>
+    <div class="sk-ranges">
+      ${['1M','6M','1Y'].map(r=>`<button class="${r===skRange?'on':''}" onclick="setSkRange('${r}')">${r}</button>`).join('')}
+    </div>
+    <div class="sk-chart"><canvas id="skChart"></canvas></div>
+
+    ${d.holders&&d.holders.length?`<div class="sk-h3">Held by</div><div class="sk-holders">${
+      d.holders.map(h=>`<span class="sk-holder"><span class="dot" style="background:${h.color}"></span>${h.name} · ${h.weight}% · <span class="${cls(h.unrealized_pct)}">${pctRaw(h.unrealized_pct)}</span></span>`).join('')
+    }</div>`:''}
+
+    <div class="sk-h3">Financials</div>
+    <div class="sk-fin">
+      ${finRow('Forward P/E',num(f.forwardPE))}
+      ${finRow('Revenue (ttm)',bn(f.revenue))}
+      ${finRow('Profit margin',pm)}
+      ${finRow('Revenue growth',rg)}
+      ${finRow('Analyst target',f.targetMeanPrice!=null?money(f.targetMeanPrice)+upside:'—')}
+      ${finRow('Recommendation',f.recommendation?`<span style="text-transform:capitalize">${f.recommendation}</span>`+(f.numAnalysts?` (${f.numAnalysts})`:''):'—')}
+      ${finRow('3M / 1M return',pctRaw(t.ret_3m)+' / '+pctRaw(t.ret_1m))}
+      ${finRow('Volatility (ann.)',t.volatility!=null?num(t.volatility,0)+'%':'—')}
+    </div>
+
+    ${p.summary?`<div class="sk-h3">About</div><p class="sk-prof">${p.summary}</p>
+      <p class="sk-prof" style="margin-top:8px;color:var(--muted)">${[p.country,p.employees?Number(p.employees).toLocaleString()+' employees':null].filter(Boolean).join(' · ')}${p.website?` · <a href="${p.website}" target="_blank" rel="noopener">${p.website.replace(/^https?:\/\//,'')}</a>`:''}</p>`:''}
+  `;
+  drawSkChart();
+}
+
+function setSkRange(r){ skRange=r; $$('.sk-ranges button').forEach(b=>b.classList.toggle('on',b.textContent===r)); drawSkChart(); }
+
+function drawSkChart(){
+  if(!skData||!skData.chart) return;
+  if(charts.sk){charts.sk.destroy();}
+  const n={'1M':21,'6M':126,'1Y':9999}[skRange]||126;
+  const dates=skData.chart.dates.slice(-n), closes=skData.chart.closes.slice(-n);
+  const up=closes.length>1 && closes[closes.length-1]>=closes[0];
+  const col=up?'#cfe88f':'#ec8472';
+  charts.sk=new Chart($('#skChart'),{type:'line',
+    data:{labels:dates,datasets:[{data:closes,borderColor:col,backgroundColor:'transparent',
+      tension:.2,pointRadius:0,borderWidth:2}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>money(c.parsed.y)}}},
+      scales:{x:{grid:{display:false},ticks:{color:'#8ea4af',maxTicksLimit:6}},
+        y:{grid:{color:'rgba(255,255,255,.05)'},ticks:{color:'#8ea4af',callback:v=>'$'+Number(v).toFixed(0)}}}}});
+}
 
 load();
 </script>

@@ -7,7 +7,7 @@ Schedule (cron, weekday 4:30pm ET example):
 """
 from __future__ import annotations
 
-from app import advisor
+from app import advisor, details
 from app.agent import run_competition
 
 
@@ -20,6 +20,12 @@ def main() -> None:
 
     print("Running agent competition...")
     view = run_competition(suggestions)
+
+    print("\nBuilding per-stock detail pages...")
+    try:
+        details.build_and_store(suggestions, view)
+    except Exception as exc:
+        print(f"  detail build failed (non-fatal): {exc}")
 
     print("\nLeaderboard:")
     for i, a in enumerate(view["leaderboard"], 1):
