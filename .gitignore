@@ -13,3 +13,4 @@ data/cron.log
 .env.prod
 data/portfolio_view.json
 .tools/
+data/
