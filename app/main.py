@@ -56,6 +56,11 @@ def equity_history():
     return store.read_json("equity_curves") or {}
 
 
+@app.get("/api/news")
+def get_news():
+    return store.read_json("news_feed") or {"reactions": [], "headlines": []}
+
+
 @app.post("/api/run-agent")
 def run_agent(refresh: bool = True):
     """Generate fresh suggestions and let all three agents trade on them."""

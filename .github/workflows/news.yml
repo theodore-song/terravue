@@ -1,0 +1,30 @@
+name: News reaction run
+
+# Off-hours, news-reactive trading. Runs several times a day (pre-market,
+# midday, after-hours, overnight) so the agents react to headlines even when
+# the market is closed. Publishes to the same KV store the live site reads.
+on:
+  schedule:
+    - cron: "0 11 * * 1-5"    # ~7am ET  (pre-market)
+    - cron: "0 14 * * 1-5"    # ~10am ET (late pre-market / open)
+    - cron: "0 23 * * 1-5"    # ~7pm ET  (after-hours)
+    - cron: "0 3 * * 2-6"     # ~11pm ET (overnight, Mon-Fri evenings)
+  workflow_dispatch: {}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements-local.txt
+      - name: Run news-reaction cycle
+        env:
+          KV_REST_API_URL: ${{ secrets.KV_REST_API_URL }}
+          KV_REST_API_TOKEN: ${{ secrets.KV_REST_API_TOKEN }}
+        run: python run_news.py

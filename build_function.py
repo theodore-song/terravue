@@ -80,6 +80,11 @@ def equity_history():
     return store.read_json("equity_curves") or {}
 
 
+@app.get("/api/news")
+def news():
+    return store.read_json("news_feed") or {"reactions": [], "headlines": []}
+
+
 @app.post("/api/run-agent")
 def run_agent():
     return JSONResponse(
