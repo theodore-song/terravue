@@ -218,11 +218,14 @@
   .sk-stat{background:var(--bg2);border-radius:var(--r);padding:10px 12px}
   .sk-stat .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
   .sk-stat .v{font-size:16px;font-weight:700;margin-top:3px;font-variant-numeric:tabular-nums}
-  .sk-ranges{display:flex;gap:6px;margin:0 0 8px}
+  .sk-controls{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 8px}
+  .sk-ranges{display:flex;gap:6px;flex-wrap:wrap}
   .sk-ranges button{font-size:12px;padding:4px 10px;border-radius:7px;border:1px solid var(--border2);
     background:transparent;color:var(--muted);cursor:pointer}
   .sk-ranges button.on{background:var(--accent-soft);border-color:var(--blue);color:var(--lime2)}
-  .sk-chart{height:240px;position:relative;margin-bottom:18px}
+  .sk-chart{height:260px;position:relative;margin-bottom:6px}
+  .sk-pane{height:90px;position:relative;margin-bottom:6px}
+  .sk-pane-l{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);margin-bottom:2px}
   .sk-h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700;margin:18px 0 8px}
   .sk-fin{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px 18px;font-size:13.5px}
   .sk-fin .row{display:flex;justify-content:space-between;border-bottom:1px solid var(--border);padding:6px 0}
@@ -392,6 +395,9 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.2.1/dist/chartjs-chart-financial.min.js"></script>
 <script>
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -691,13 +697,15 @@ async function runAgent(){
   b.disabled=false;b.textContent='Run agent';}
 
 /* ---------- stock detail modal ---------- */
-let skData=null, skRange='6M';
+let skData=null, skRange='1Y', skType='candle', skMA={50:true,200:true};
+const SK_RANGES=['1M','6M','1Y','3Y','5Y','10Y','All'];
 document.addEventListener('click', e=>{
   const el=e.target.closest('.tkr'); if(el) openStock(el.dataset.tkr);
 });
 document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeStock(); });
 
-function closeStock(){ $('#stockModal').classList.remove('open'); if(charts.sk){charts.sk.destroy();charts.sk=null;} }
+function closeStock(){ $('#stockModal').classList.remove('open');
+  ['sk','skVol','skMacd'].forEach(k=>{if(charts[k]){charts[k].destroy();charts[k]=null;}}); }
 
 async function openStock(ticker){
   const m=$('#stockModal'); m.classList.add('open');
@@ -716,18 +724,19 @@ function bn(n){ // big number formatting (market cap, revenue)
 function pctRaw(n){return n==null||isNaN(n)?'—':(n>=0?'+':'')+Number(n).toFixed(2)+'%';}
 function num(n,d=2){return n==null||isNaN(n)?'—':Number(n).toFixed(d);}
 
+function pctFrac(n,d=1){return n==null||isNaN(n)?'—':(n>=0?'+':'')+(Number(n)*100).toFixed(d)+'%';}
+function pctFracU(n,d=1){return n==null||isNaN(n)?'—':(Number(n)*100).toFixed(d)+'%';}
+
 function renderStock(d){
   if(d.error){ $('#stockBody').innerHTML=`<div class="sk-head"><span class="nm">${d.ticker}</span></div><p class="empty">${d.error}</p>`; return; }
   const t=d.technicals, f=d.financials, p=d.profile;
   const stat=(l,v)=>`<div class="sk-stat"><div class="l">${l}</div><div class="v">${v}</div></div>`;
   const finRow=(k,v)=>`<div class="row"><span class="k">${k}</span><span>${v}</span></div>`;
   const dy=f.dividendYield!=null?Number(f.dividendYield).toFixed(2)+'%':'—';
-  const pm=f.profitMargin!=null?(f.profitMargin*100).toFixed(1)+'%':'—';
-  const rg=f.revenueGrowth!=null?(f.revenueGrowth*100).toFixed(1)+'%':'—';
   const upside=(f.targetMeanPrice&&d.price)?` (${pctRaw((f.targetMeanPrice/d.price-1)*100)})`:'';
   $('#stockBody').innerHTML=`
     <div class="sk-head">
-      <span class="nm">${d.name||d.ticker}</span><span class="tk2">${d.ticker} · ${d.exchange||''}</span>
+      <span class="nm">${d.name||d.ticker}</span><span class="tk2">${d.ticker}${d.exchange?' · '+d.exchange:''}</span>
       <span class="px">${d.price!=null?money(d.price):'—'} <span class="${cls(d.chg_1d||0)}" style="font-size:14px">${pctRaw(d.chg_1d)}</span></span>
     </div>
     <div class="sk-sub">${[p.sector,p.industry].filter(Boolean).join(' · ')||'—'}</div>
@@ -735,55 +744,147 @@ function renderStock(d){
       ${stat('Market cap',bn(f.marketCap))}
       ${stat('P/E (ttm)',num(f.trailingPE))}
       ${stat('EPS',f.eps!=null?'$'+num(f.eps):'—')}
-      ${stat('Beta',num(f.beta))}
       ${stat('Div yield',dy)}
       ${stat('52w range',(d.fiftyTwoWeekLow!=null?money(d.fiftyTwoWeekLow):'—')+' – '+(d.fiftyTwoWeekHigh!=null?money(d.fiftyTwoWeekHigh):'—'))}
-      ${stat('RSI (14)',num(t.rsi14,0))}
       ${stat('1Y return',pctRaw(t.ret_1y))}
     </div>
-    <div class="sk-ranges">
-      ${['1M','6M','1Y'].map(r=>`<button class="${r===skRange?'on':''}" onclick="setSkRange('${r}')">${r}</button>`).join('')}
+
+    <div class="sk-controls">
+      <div class="sk-ranges" id="skRanges">${SK_RANGES.map(r=>`<button class="${r===skRange?'on':''}" onclick="setSkRange('${r}')">${r}</button>`).join('')}</div>
+      <div class="sk-ranges">
+        <button class="${skType==='candle'?'on':''}" onclick="setSkType('candle')">Candles</button>
+        <button class="${skType==='line'?'on':''}" onclick="setSkType('line')">Line</button>
+        <button class="${skMA[50]?'on':''}" onclick="toggleMA(50)">MA50</button>
+        <button class="${skMA[200]?'on':''}" onclick="toggleMA(200)">MA200</button>
+      </div>
     </div>
     <div class="sk-chart"><canvas id="skChart"></canvas></div>
+    <div class="sk-pane"><div class="sk-pane-l">Volume</div><canvas id="skVol"></canvas></div>
+    <div class="sk-pane"><div class="sk-pane-l">MACD (12,26,9)</div><canvas id="skMacd"></canvas></div>
 
     ${d.holders&&d.holders.length?`<div class="sk-h3">Held by</div><div class="sk-holders">${
       d.holders.map(h=>`<span class="sk-holder"><span class="dot" style="background:${h.color}"></span>${h.name} · ${h.weight}% · <span class="${cls(h.unrealized_pct)}">${pctRaw(h.unrealized_pct)}</span></span>`).join('')
     }</div>`:''}
 
-    <div class="sk-h3">Financials</div>
+    <div class="sk-h3">Valuation</div>
     <div class="sk-fin">
-      ${finRow('Forward P/E',num(f.forwardPE))}
+      ${finRow('Market cap',bn(f.marketCap))}
+      ${finRow('Enterprise value',bn(f.enterpriseValue))}
+      ${finRow('P/E (ttm / fwd)',num(f.trailingPE)+' / '+num(f.forwardPE))}
+      ${finRow('PEG ratio',num(f.pegRatio))}
+      ${finRow('Price / book',num(f.priceToBook))}
+      ${finRow('Price / sales',num(f.priceToSales))}
+      ${finRow('EV / EBITDA',num(f.evToEbitda))}
+      ${finRow('Beta',num(f.beta))}
+    </div>
+    <div class="sk-h3">Profitability &amp; growth</div>
+    <div class="sk-fin">
       ${finRow('Revenue (ttm)',bn(f.revenue))}
-      ${finRow('Profit margin',pm)}
-      ${finRow('Revenue growth',rg)}
+      ${finRow('Revenue growth',pctFrac(f.revenueGrowth))}
+      ${finRow('Earnings growth',pctFrac(f.earningsGrowth))}
+      ${finRow('Gross margin',pctFracU(f.grossMargin))}
+      ${finRow('Operating margin',pctFracU(f.operatingMargin))}
+      ${finRow('Profit margin',pctFracU(f.profitMargin))}
+      ${finRow('Return on equity',pctFracU(f.roe))}
+      ${finRow('Return on assets',pctFracU(f.roa))}
+      ${finRow('EBITDA',bn(f.ebitda))}
+      ${finRow('Free cash flow',bn(f.freeCashflow))}
+    </div>
+    <div class="sk-h3">Balance sheet &amp; dividend</div>
+    <div class="sk-fin">
+      ${finRow('Total cash',bn(f.totalCash))}
+      ${finRow('Total debt',bn(f.totalDebt))}
+      ${finRow('Debt / equity',num(f.debtToEquity))}
+      ${finRow('Current ratio',num(f.currentRatio))}
+      ${finRow('Book value / sh',f.bookValue!=null?'$'+num(f.bookValue):'—')}
+      ${finRow('Dividend yield',dy)}
+      ${finRow('Payout ratio',pctFracU(f.payoutRatio))}
+      ${finRow('Shares out',f.sharesOutstanding!=null?bn(f.sharesOutstanding).replace('$',''):'—')}
+    </div>
+    <div class="sk-h3">Analysts, ownership &amp; technicals</div>
+    <div class="sk-fin">
       ${finRow('Analyst target',f.targetMeanPrice!=null?money(f.targetMeanPrice)+upside:'—')}
       ${finRow('Recommendation',f.recommendation?`<span style="text-transform:capitalize">${f.recommendation}</span>`+(f.numAnalysts?` (${f.numAnalysts})`:''):'—')}
-      ${finRow('3M / 1M return',pctRaw(t.ret_3m)+' / '+pctRaw(t.ret_1m))}
-      ${finRow('Volatility (ann.)',t.volatility!=null?num(t.volatility,0)+'%':'—')}
+      ${finRow('Held by institutions',pctFracU(f.heldInstitutions))}
+      ${finRow('Held by insiders',pctFracU(f.heldInsiders))}
+      ${finRow('Short ratio',num(f.shortRatio))}
+      ${finRow('Avg volume',f.avgVolume!=null?Number(f.avgVolume).toLocaleString():'—')}
+      ${finRow('RSI (14)',num(t.rsi14,0))}
+      ${finRow('Volatility / 5Y ret',(t.volatility!=null?num(t.volatility,0)+'%':'—')+' / '+pctRaw(t.ret_5y))}
     </div>
 
     ${p.summary?`<div class="sk-h3">About</div><p class="sk-prof">${p.summary}</p>
       <p class="sk-prof" style="margin-top:8px;color:var(--muted)">${[p.country,p.employees?Number(p.employees).toLocaleString()+' employees':null].filter(Boolean).join(' · ')}${p.website?` · <a href="${p.website}" target="_blank" rel="noopener">${p.website.replace(/^https?:\/\//,'')}</a>`:''}</p>`:''}
   `;
-  drawSkChart();
+  drawSkCharts();
 }
 
-function setSkRange(r){ skRange=r; $$('.sk-ranges button').forEach(b=>b.classList.toggle('on',b.textContent===r)); drawSkChart(); }
+function setSkRange(r){ skRange=r; drawSkControls(); drawSkCharts(); }
+function setSkType(tp){ skType=tp; drawSkControls(); drawSkCharts(); }
+function toggleMA(n){ skMA[n]=!skMA[n]; drawSkControls(); drawSkCharts(); }
+function drawSkControls(){
+  $('#skRanges').innerHTML=SK_RANGES.map(r=>`<button class="${r===skRange?'on':''}" onclick="setSkRange('${r}')">${r}</button>`).join('');
+  const tg=$('#skRanges').nextElementSibling;
+  if(tg) tg.innerHTML=`<button class="${skType==='candle'?'on':''}" onclick="setSkType('candle')">Candles</button>
+    <button class="${skType==='line'?'on':''}" onclick="setSkType('line')">Line</button>
+    <button class="${skMA[50]?'on':''}" onclick="toggleMA(50)">MA50</button>
+    <button class="${skMA[200]?'on':''}" onclick="toggleMA(200)">MA200</button>`;
+}
 
-function drawSkChart(){
-  if(!skData||!skData.chart) return;
-  if(charts.sk){charts.sk.destroy();}
-  const n={'1M':21,'6M':126,'1Y':9999}[skRange]||126;
-  const dates=skData.chart.dates.slice(-n), closes=skData.chart.closes.slice(-n);
-  const up=closes.length>1 && closes[closes.length-1]>=closes[0];
-  const col=up?'#cfe88f':'#ec8472';
-  charts.sk=new Chart($('#skChart'),{type:'line',
-    data:{labels:dates,datasets:[{data:closes,borderColor:col,backgroundColor:'transparent',
-      tension:.2,pointRadius:0,borderWidth:2}]},
-    options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>money(c.parsed.y)}}},
-      scales:{x:{grid:{display:false},ticks:{color:'#8ea4af',maxTicksLimit:6}},
-        y:{grid:{color:'rgba(255,255,255,.05)'},ticks:{color:'#8ea4af',callback:v=>'$'+Number(v).toFixed(0)}}}}});
+function sma(arr,n){const out=Array(arr.length).fill(null);let s=0;for(let i=0;i<arr.length;i++){s+=arr[i];if(i>=n)s-=arr[i-n];if(i>=n-1)out[i]=s/n;}return out;}
+function ema(arr,n){const out=Array(arr.length).fill(null);const k=2/(n+1);let prev=null;for(let i=0;i<arr.length;i++){const v=arr[i];prev=prev==null?v:v*k+prev*(1-k);out[i]=prev;}return out;}
+function macd(closes){const f=ema(closes,12),s=ema(closes,26);const line=closes.map((_,i)=>f[i]-s[i]);const sig=ema(line,9);const hist=line.map((v,i)=>v-sig[i]);return {line,sig,hist};}
+
+function drawSkCharts(){
+  if(!skData||!skData.series) return;
+  ['sk','skVol','skMacd'].forEach(k=>{if(charts[k]){charts[k].destroy();charts[k]=null;}});
+  const useWeekly=['3Y','5Y','10Y','All'].includes(skRange);
+  const ser=useWeekly?skData.series.weekly:skData.series.daily;
+  if(!ser){ return; }
+  const counts={'1M':22,'6M':126,'1Y':252,'3Y':156,'5Y':260,'10Y':520,'All':99999};
+  const n=Math.min(counts[skRange]||252, ser.t.length);
+  // compute indicators over the FULL series, then slice the last n
+  const fullC=ser.c.map(x=>x==null?0:x);
+  const ma50=sma(fullC,50), ma200=sma(fullC,200), mac=macd(fullC);
+  const s=ser.t.length-n;
+  const X=ser.t.slice(s).map(t=>t*1000);
+  const pts=(arr)=>X.map((x,i)=>({x, y:arr[s+i]}));
+  const ohlc=X.map((x,i)=>({x, o:ser.o[s+i], h:ser.h[s+i], l:ser.l[s+i], c:ser.c[s+i]}));
+  const up=ser.c[ser.c.length-1]>=ser.c[s];
+  const axisX={type:'time',time:{unit:useWeekly?'year':(n<=22?'day':'month')},
+    grid:{display:false},ticks:{color:'#8ea4af',maxTicksLimit:7,autoSkip:true}};
+
+  const priceDs=[];
+  if(skType==='candle'){
+    priceDs.push({type:'candlestick',label:skData.ticker,data:ohlc,
+      color:{up:'#cfe88f',down:'#ec8472',unchanged:'#95AFBA'},borderColor:{up:'#cfe88f',down:'#ec8472',unchanged:'#95AFBA'}});
+  }else{
+    priceDs.push({type:'line',label:'Close',data:pts(ser.c),borderColor:up?'#cfe88f':'#ec8472',
+      backgroundColor:'transparent',pointRadius:0,borderWidth:2,tension:.15});
+  }
+  if(skMA[50]) priceDs.push({type:'line',label:'MA50',data:pts(ma50),borderColor:'#3F7CAC',pointRadius:0,borderWidth:1.4,spanGaps:true});
+  if(skMA[200]) priceDs.push({type:'line',label:'MA200',data:pts(ma200),borderColor:'#E2A23F',pointRadius:0,borderWidth:1.4,spanGaps:true});
+
+  charts.sk=new Chart($('#skChart'),{data:{datasets:priceDs},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,parsing:false,
+      plugins:{legend:{display:skMA[50]||skMA[200],labels:{color:'#8ea4af',boxWidth:8,filter:i=>i.text!=='Close'&&i.text!==skData.ticker}},
+        tooltip:{mode:'index',intersect:false,callbacks:{label:c=>c.dataset.label+': '+money(c.raw.c!=null?c.raw.c:c.raw.y)}}},
+      scales:{x:axisX,y:{position:'right',grid:{color:'rgba(255,255,255,.05)'},ticks:{color:'#8ea4af',callback:v=>'$'+Number(v).toFixed(0)}}}}});
+
+  const volColors=X.map((x,i)=>(ser.c[s+i]>=(ser.o[s+i]??ser.c[s+i])?'rgba(207,232,143,.55)':'rgba(236,132,114,.55)'));
+  charts.skVol=new Chart($('#skVol'),{type:'bar',data:{datasets:[{label:'Vol',data:pts(ser.v),backgroundColor:volColors,borderWidth:0}]},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,parsing:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>Number(c.raw.y).toLocaleString()}}},
+      scales:{x:{...axisX,ticks:{display:false}},y:{position:'right',grid:{display:false},ticks:{color:'#8ea4af',maxTicksLimit:3,callback:v=>v>=1e9?(v/1e9).toFixed(1)+'B':v>=1e6?(v/1e6).toFixed(0)+'M':v}}}}});
+
+  const histColors=X.map((x,i)=>(mac.hist[s+i]>=0?'rgba(207,232,143,.6)':'rgba(236,132,114,.6)'));
+  charts.skMacd=new Chart($('#skMacd'),{data:{datasets:[
+    {type:'bar',label:'Hist',data:pts(mac.hist),backgroundColor:histColors,borderWidth:0},
+    {type:'line',label:'MACD',data:pts(mac.line),borderColor:'#3F7CAC',pointRadius:0,borderWidth:1.3},
+    {type:'line',label:'Signal',data:pts(mac.sig),borderColor:'#E2A23F',pointRadius:0,borderWidth:1.3}]},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,parsing:false,
+      plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false}},
+      scales:{x:{...axisX,ticks:{display:false}},y:{position:'right',grid:{color:'rgba(255,255,255,.05)'},ticks:{color:'#8ea4af',maxTicksLimit:3}}}}});
 }
 
 load();

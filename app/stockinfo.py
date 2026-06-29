@@ -94,22 +94,29 @@ def _volatility(xs, window=30):
 
 # --- fetchers ---------------------------------------------------------------
 
-def get_chart(ticker: str) -> dict | None:
-    import datetime as _dt
+def _ohlcv(ticker: str, rng: str, interval: str) -> dict | None:
+    """Return an OHLCV series {t,o,h,l,c,v} (+ meta) from Yahoo's v8 chart."""
     for host in ("query1", "query2"):
         url = (f"https://{host}.finance.yahoo.com/v8/finance/chart/"
-               f"{urllib.parse.quote(ticker)}?range=1y&interval=1d")
+               f"{urllib.parse.quote(ticker)}?range={rng}&interval={interval}")
         try:
             d = json.load(_get(url))
             r = d["chart"]["result"][0]
-            meta = r["meta"]
             ts = r.get("timestamp", []) or []
-            closes_raw = r["indicators"]["quote"][0].get("close", []) or []
-            pts = [(t, c) for t, c in zip(ts, closes_raw) if c is not None]
-            dates = [_dt.datetime.utcfromtimestamp(t).strftime("%Y-%m-%d") for t, _ in pts]
-            return {"meta": meta, "dates": dates, "closes": [float(c) for _, c in pts]}
+            q = r["indicators"]["quote"][0]
+            o, h, l, c, v = (q.get(k, []) or [] for k in ("open", "high", "low", "close", "volume"))
+            t2, o2, h2, l2, c2, v2 = [], [], [], [], [], []
+            for i, tt in enumerate(ts):
+                if i < len(c) and c[i] is not None:
+                    t2.append(int(tt))
+                    o2.append(round(float(o[i]), 4) if i < len(o) and o[i] is not None else None)
+                    h2.append(round(float(h[i]), 4) if i < len(h) and h[i] is not None else None)
+                    l2.append(round(float(l[i]), 4) if i < len(l) and l[i] is not None else None)
+                    c2.append(round(float(c[i]), 4))
+                    v2.append(int(v[i]) if i < len(v) and v[i] is not None else 0)
+            return {"meta": r["meta"], "t": t2, "o": o2, "h": h2, "l": l2, "c": c2, "v": v2}
         except Exception as exc:
-            print(f"[stockinfo] chart {ticker} {host}: {exc}")
+            print(f"[stockinfo] chart {ticker} {host} {rng}/{interval}: {exc}")
     return None
 
 
@@ -155,58 +162,72 @@ def get_stock_detail(ticker: str, agents_view: dict | None = None) -> dict:
         d["holders"] = _holders_for(ticker, agents_view)   # keep holders fresh
         return d
 
-    chart = get_chart(ticker)
-    if not chart:
+    daily = _ohlcv(ticker, "1y", "1d")
+    if not daily:
         return {"ticker": ticker,
                 "error": "Live data is temporarily unavailable (rate limited). Try again shortly."}
+    weekly = _ohlcv(ticker, "max", "1wk")
 
-    closes = chart["closes"]
-    meta = chart["meta"]
+    closes = daily["c"]
+    wcloses = weekly["c"] if weekly else []
+    meta = daily["meta"]
     price = meta.get("regularMarketPrice") or (closes[-1] if closes else None)
-    chg_1d = _ret(closes, 1)   # last close vs prior close
 
     fun = get_fundamentals(ticker)
     ap, sd = fun.get("assetProfile", {}), fun.get("summaryDetail", {})
     ks, fd = fun.get("defaultKeyStatistics", {}), fun.get("financialData", {})
     pr = fun.get("price", {})
+    dy = _raw(sd, "dividendYield")
+    if dy is not None and dy < 1:        # quoteSummary gives a fraction; details gives %
+        dy = dy * 100
 
     detail = {
         "ticker": ticker,
-        "name": meta.get("longName") or meta.get("shortName") or (pr.get("longName")) or ticker,
+        "name": meta.get("longName") or meta.get("shortName") or pr.get("longName") or ticker,
         "exchange": meta.get("fullExchangeName") or meta.get("exchangeName"),
         "currency": meta.get("currency", "USD"),
         "price": price,
-        "chg_1d": chg_1d,
+        "chg_1d": _ret(closes, 1),
         "fiftyTwoWeekHigh": meta.get("fiftyTwoWeekHigh"),
         "fiftyTwoWeekLow": meta.get("fiftyTwoWeekLow"),
-        "chart": {"dates": chart["dates"], "closes": closes},
+        "series": {"daily": {k: daily[k] for k in ("t", "o", "h", "l", "c", "v")},
+                   "weekly": ({k: weekly[k] for k in ("t", "o", "h", "l", "c", "v")} if weekly else None)},
         "technicals": {
-            "rsi14": _rsi(closes),
-            "sma50": _sma(closes, 50),
-            "sma200": _sma(closes, 200),
-            "ret_1m": _ret(closes, 21),
-            "ret_3m": _ret(closes, 63),
+            "rsi14": _rsi(closes), "ret_1m": _ret(closes, 21), "ret_3m": _ret(closes, 63),
             "ret_1y": ((closes[-1] / closes[0] - 1) * 100) if len(closes) > 1 else None,
+            "ret_5y": ((wcloses[-1] / wcloses[-260] - 1) * 100) if len(wcloses) > 260 else None,
             "volatility": _volatility(closes),
         },
+        "signal": {},
         "profile": {
-            "sector": ap.get("sector"),
-            "industry": ap.get("industry"),
-            "country": ap.get("country"),
-            "website": ap.get("website"),
-            "employees": ap.get("fullTimeEmployees"),
-            "summary": ap.get("longBusinessSummary"),
+            "sector": ap.get("sector"), "industry": ap.get("industry"),
+            "country": ap.get("country"), "website": ap.get("website"),
+            "employees": ap.get("fullTimeEmployees"), "summary": ap.get("longBusinessSummary"),
         },
         "financials": {
             "marketCap": _raw(pr, "marketCap") or _raw(sd, "marketCap"),
-            "trailingPE": _raw(sd, "trailingPE"),
-            "forwardPE": _raw(sd, "forwardPE"),
-            "eps": _raw(ks, "trailingEps"),
+            "enterpriseValue": _raw(ks, "enterpriseValue"),
+            "trailingPE": _raw(sd, "trailingPE"), "forwardPE": _raw(sd, "forwardPE"),
+            "pegRatio": _raw(ks, "pegRatio") or _raw(ks, "trailingPegRatio"),
+            "priceToBook": _raw(ks, "priceToBook"),
+            "priceToSales": _raw(sd, "priceToSalesTrailing12Months"),
+            "evToEbitda": _raw(ks, "enterpriseToEbitda"),
+            "profitMargin": _raw(fd, "profitMargins"), "operatingMargin": _raw(fd, "operatingMargins"),
+            "grossMargin": _raw(fd, "grossMargins"), "roe": _raw(fd, "returnOnEquity"),
+            "roa": _raw(fd, "returnOnAssets"), "ebitda": _raw(fd, "ebitda"),
+            "freeCashflow": _raw(fd, "freeCashflow"),
+            "eps": _raw(ks, "trailingEps"), "forwardEps": _raw(ks, "forwardEps"),
+            "bookValue": _raw(ks, "bookValue"), "revenue": _raw(fd, "totalRevenue"),
+            "revenueGrowth": _raw(fd, "revenueGrowth"), "earningsGrowth": _raw(fd, "earningsGrowth"),
+            "totalCash": _raw(fd, "totalCash"), "totalDebt": _raw(fd, "totalDebt"),
+            "debtToEquity": _raw(fd, "debtToEquity"), "currentRatio": _raw(fd, "currentRatio"),
+            "dividendYield": dy, "payoutRatio": _raw(sd, "payoutRatio"),
             "beta": _raw(sd, "beta") or _raw(ks, "beta"),
-            "dividendYield": _raw(sd, "dividendYield"),
-            "revenue": _raw(fd, "totalRevenue"),
-            "profitMargin": _raw(fd, "profitMargins"),
-            "revenueGrowth": _raw(fd, "revenueGrowth"),
+            "sma50": _raw(sd, "fiftyDayAverage"), "sma200": _raw(sd, "twoHundredDayAverage"),
+            "avgVolume": _raw(sd, "averageVolume"), "sharesOutstanding": _raw(ks, "sharesOutstanding"),
+            "heldInsiders": _raw(ks, "heldPercentInsiders"),
+            "heldInstitutions": _raw(ks, "heldPercentInstitutions"),
+            "shortRatio": _raw(ks, "shortRatio"),
             "targetMeanPrice": _raw(fd, "targetMeanPrice"),
             "recommendation": (fd.get("recommendationKey") or "").replace("_", " ") or None,
             "numAnalysts": _raw(fd, "numberOfAnalystOpinions"),
