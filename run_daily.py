@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Daily cycle: refresh suggestions, then run the three competing agents.
+"""Daily cycle: refresh suggestions, then run the competing agents.
 
 Run manually:        ./.venv/bin/python run_daily.py
 Schedule (cron, weekday 4:30pm ET example):

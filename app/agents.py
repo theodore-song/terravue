@@ -1,11 +1,11 @@
-"""Three competing AI trading agents, each with a distinct personality/strategy.
+"""Competing AI trading agents, each with a distinct personality/strategy.
 
 They all read the same daily analysis but rank and select stocks differently, so
 they build different portfolios and compete on total return.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
 # Signal names produced by strategies.py
@@ -34,6 +34,8 @@ class AgentDef:
     buy_threshold: float      # min agent-score to open/add
     sell_threshold: float     # agent-score at/below which to exit
     scorer: Callable[[dict], float]
+    focus_tickers: tuple[str, ...] = field(default_factory=tuple)
+    copy_leader: bool = False
 
     def score(self, s: dict) -> float:
         return self.scorer(s)
@@ -65,22 +67,114 @@ def _orion(s: dict) -> float:
     return s.get("composite", 0.0) / (1.0 + max(vol, 0.05) * 1.5)
 
 
+def _focus_bonus(s: dict, tickers: tuple[str, ...], bonus: float = 0.85) -> float:
+    return bonus if s.get("ticker") in tickers else 0.0
+
+
+BERKSHIRE_BOOK = (
+    "AAPL", "AXP", "KO", "BAC", "CVX", "OXY", "GOOGL", "GOOG",
+    "CB", "MCO", "KHC", "KR", "VRSN", "COF", "ALLY", "DAL", "LEN", "NUE",
+)
+PERSHING_BOOK = (
+    "BN", "AMZN", "UBER", "MSFT", "GOOG", "GOOGL", "CP", "CMG", "HLT", "QSR",
+)
+COATUE_BOOK = (
+    "NVDA", "TSLA", "META", "AMZN", "MSFT", "GOOGL", "AVGO", "CRWD",
+    "SNOW", "DDOG", "NET", "PANW", "UBER",
+)
+DUQUESNE_BOOK = (
+    "NVDA", "MSFT", "AMZN", "META", "AVGO", "GE", "NUE", "TECK",
+    "FCX", "XLE", "XLF", "SMH",
+)
+
+
+def _berkshire(s: dict) -> float:
+    # Buffett/Greg Abel style: durable compounders, financials/consumer staples,
+    # reasonable volatility, and still-positive technical confirmation.
+    vol = s.get("indicators", {}).get("volatility", 0.3)
+    return (
+        0.9 * _sig(s, TREND)
+        + 0.55 * _sig(s, MACD)
+        + 0.35 * _sig(s, BREAKOUT)
+        + 0.65 * s.get("composite", 0.0)
+        + _focus_bonus(s, BERKSHIRE_BOOK, 1.0)
+        - 0.45 * max(vol - 0.25, 0)
+    )
+
+
+def _pershing(s: dict) -> float:
+    # Ackman style: concentrated quality franchises; buy only when signals agree
+    # enough to avoid averaging down into deteriorating trends.
+    return (
+        0.95 * s.get("composite", 0.0)
+        + 0.85 * _sig(s, TREND)
+        + 0.55 * _sig(s, MACD)
+        + _focus_bonus(s, PERSHING_BOOK, 1.05)
+    )
+
+
+def _coatue(s: dict) -> float:
+    # Growth/technology specialist: favors software, AI and platform winners,
+    # but still requires momentum and breakout confirmation.
+    return (
+        1.05 * _sig(s, TREND)
+        + 0.95 * _sig(s, MACD)
+        + 0.75 * _sig(s, BREAKOUT)
+        + 0.35 * s.get("composite", 0.0)
+        + _focus_bonus(s, COATUE_BOOK, 0.95)
+    )
+
+
+def _duquesne(s: dict) -> float:
+    # Druckenmiller style: macro momentum and relative strength, with willingness
+    # to rotate between tech, industrials and cyclicals.
+    vol = s.get("indicators", {}).get("volatility", 0.3)
+    return (
+        1.15 * _sig(s, TREND)
+        + 0.8 * _sig(s, BREAKOUT)
+        + 0.65 * _sig(s, MACD)
+        + _focus_bonus(s, DUQUESNE_BOOK, 0.8)
+        - 0.25 * max(vol - 0.55, 0)
+    )
+
+
+def _echo(s: dict) -> float:
+    # Placeholder scorer; Echo's actual behavior is handled by copying the
+    # current leader's portfolio after the strategy agents have traded.
+    return s.get("composite", 0.0)
+
+
 AGENTS: list[AgentDef] = [
     AgentDef("apex", "Apex", "Momentum",
              "Chases the strongest trends and breakouts. Aggressive and concentrated.",
-             "#3F7CAC", 0.20, 10, 0.6, -0.4, _apex),
+             "#3F7CAC", 0.16, 10, 0.85, -0.35, _apex),
     AgentDef("sage", "Sage", "Contrarian value",
-             "Buys oversold, beaten-down names betting on the bounce. Patient and diversified.",
-             "#E2F89C", 0.12, 18, 0.5, -0.7, _sage),
+             "Looks for oversold bounces, but now waits for MACD/trend confirmation before buying.",
+             "#E2F89C", 0.09, 18, 0.75, -0.45, _sage),
     AgentDef("atlas", "Atlas", "Balanced",
              "A diversified blend of trend, momentum and breakout signals. Risk-managed.",
-             "#BDC4A7", 0.15, 15, 0.5, -0.5, _atlas),
+             "#BDC4A7", 0.12, 16, 0.65, -0.35, _atlas),
     AgentDef("nova", "Nova", "Breakout",
              "Hunts stocks breaking out to new highs out of their trading range. Trend-hungry.",
-             "#95AFBA", 0.18, 12, 0.6, -0.4, _nova),
+             "#95AFBA", 0.14, 12, 0.85, -0.35, _nova),
     AgentDef("orion", "Orion", "Low-volatility quality",
              "Prefers steady, low-volatility names with positive momentum. Defensive and broad.",
-             "#D5E1A3", 0.10, 20, 0.4, -0.5, _orion),
+             "#D5E1A3", 0.08, 22, 0.45, -0.3, _orion),
+    AgentDef("echo", "Echo", "Leader copycat",
+             "Copies whoever is leading the scoreboard, matching that agent's holdings after each run.",
+             "#F4D35E", 0.14, 20, 0.0, -99.0, _echo, copy_leader=True),
+    AgentDef("berkshire", "Berkshire Bot", "Buffett-style quality",
+             "Models Berkshire's concentrated durable-compounder playbook with a public-holdings watchlist.",
+             "#5BC0BE", 0.13, 14, 0.7, -0.3, _berkshire, BERKSHIRE_BOOK),
+    AgentDef("pershing", "Pershing Bot", "Ackman-style concentration",
+             "Runs a concentrated quality-franchise strategy inspired by Pershing Square's public book.",
+             "#F08A5D", 0.16, 10, 0.75, -0.3, _pershing, PERSHING_BOOK),
+    AgentDef("coatue", "Coatue Bot", "Tech growth",
+             "Copies the growth-investor mindset: AI, software and platform leaders with strong momentum.",
+             "#B83B5E", 0.12, 16, 0.8, -0.35, _coatue, COATUE_BOOK),
+    AgentDef("duquesne", "Duquesne Bot", "Macro momentum",
+             "Tracks a Druckenmiller-like macro momentum basket across tech, cyclicals and sector ETFs.",
+             "#6A2C70", 0.12, 14, 0.75, -0.35, _duquesne, DUQUESNE_BOOK),
 ]
 
 

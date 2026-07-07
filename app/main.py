@@ -63,7 +63,7 @@ def get_news():
 
 @app.post("/api/run-agent")
 def run_agent(refresh: bool = True):
-    """Generate fresh suggestions and let all three agents trade on them."""
+    """Generate fresh suggestions and let all agents trade on them."""
     suggestions = (advisor.generate_suggestions() if refresh
                    else (advisor.load_suggestions() or advisor.generate_suggestions()))
     view = run_competition(suggestions)
