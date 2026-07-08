@@ -17,6 +17,7 @@ from fastapi import FastAPI                                  # noqa: E402
 from fastapi.responses import HTMLResponse, JSONResponse    # noqa: E402
 
 from app import store                                        # noqa: E402
+from app.agent_view import augment_agents_view, augment_equity_curves  # noqa: E402
 
 app = FastAPI(title="Terravue (read-only)")
 
@@ -43,7 +44,7 @@ def suggestions():
 
 @app.get("/api/agents")
 def agents():
-    return store.read_json("agents_view") or {"agents": [], "leaderboard": []}
+    return augment_agents_view(store.read_json("agents_view"))
 
 
 @app.get("/api/stock/{ticker}")
@@ -59,7 +60,7 @@ def stock(ticker: str):
 
 @app.get("/api/equity-history")
 def equity_history():
-    return store.read_json("equity_curves") or {}
+    return augment_equity_curves(store.read_json("equity_curves"))
 
 
 @app.get("/api/news")

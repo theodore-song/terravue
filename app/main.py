@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 
 from . import advisor, store
+from .agent_view import augment_agents_view, augment_equity_curves
 from .config import BASE_DIR, LLM_ENABLED
 from .agent import run_competition
 from .universe import get_universe
@@ -37,7 +38,7 @@ def get_suggestions(refresh: bool = False):
 
 @app.get("/api/agents")
 def get_agents():
-    return store.read_json("agents_view") or {"agents": [], "leaderboard": []}
+    return augment_agents_view(store.read_json("agents_view"))
 
 
 @app.get("/api/stock/{ticker}")
@@ -53,7 +54,7 @@ def get_stock(ticker: str):
 
 @app.get("/api/equity-history")
 def equity_history():
-    return store.read_json("equity_curves") or {}
+    return augment_equity_curves(store.read_json("equity_curves"))
 
 
 @app.get("/api/news")
