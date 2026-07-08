@@ -24,6 +24,8 @@ WEAK_GAIN_EXIT_PCT = 6.0
 MIN_BUY_COMPOSITE = 0.7
 MAX_NORMAL_POSITION_PCT = 0.10
 MAX_DRAWDOWN_POSITION_PCT = 0.06
+PEER_COPY_MAX_TRADES = 3
+PEER_COPY_EDGE_PCT = 0.01
 
 
 def _cash_reserve_pct(portfolio_return_pct: float) -> float:
@@ -82,6 +84,34 @@ def _signal_score(s: dict, name: str) -> float:
         if x.get("name") == name:
             return x.get("score", 0.0)
     return 0.0
+
+
+def _today() -> str:
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+def _daily_strategy_note(adef: AgentDef, snapshot: dict, actions: list[str],
+                         rank: int | None = None, leader_name: str | None = None) -> str:
+    cash_pct = snapshot["cash"] / max(snapshot["equity"], 1) * 100
+    prefix = f"Rank #{rank}. " if rank else ""
+    if adef.copy_leader:
+        target = leader_name or "the current leader"
+        return (
+            f"{prefix}Copy {target}'s best risk-adjusted holdings, but skip losing or "
+            f"technically weak positions. Keep about {cash_pct:.0f}% cash until the "
+            "leader's book proves it is working."
+        )
+    if snapshot["total_return_pct"] < -2:
+        posture = "capital-defense mode"
+    elif cash_pct > 30:
+        posture = "selective attack mode"
+    else:
+        posture = "fully engaged mode"
+    peer = "Copy same-day buy trades from agents ranked ahead when those names also pass this agent's own filters."
+    return (
+        f"{prefix}{posture}: use {adef.style.lower()} scoring, keep losers on a short leash, "
+        f"cap position sizes, and deploy fresh cash only into confirmed strength. {peer}"
+    )
 
 
 def _sync_to_leader(adef: AgentDef, suggestions: dict, leader: AgentDef | None) -> dict:
@@ -156,6 +186,71 @@ def _sync_to_leader(adef: AgentDef, suggestions: dict, leader: AgentDef | None) 
 
     if not actions:
         actions.append(f"No trades — already aligned with {leader.name}.")
+
+    curve = portfolio.record_equity(prices)
+    portfolio.save()
+    return {
+        "id": adef.id,
+        "actions": actions,
+        "snapshot": portfolio.snapshot(prices),
+        "recent_trades": portfolio.recent_trades(),
+        "curve": curve,
+    }
+
+
+def _copy_peer_trades(adef: AgentDef, suggestions: dict, peers: list[dict]) -> dict:
+    """Let an agent copy today's strongest peer buys when its own filters agree."""
+    portfolio = Portfolio.load(adef.id)
+    actions: list[str] = []
+    sugg = suggestions.get("suggestions", [])
+    by_ticker = {s["ticker"]: s for s in sugg}
+    prices = {s["ticker"]: s["price"] for s in sugg}
+    equity = portfolio.equity(prices)
+    own_return = (equity / STARTING_CASH - 1) * 100
+
+    copied: set[str] = set()
+    candidates: list[tuple[float, str, str, dict]] = []
+    for peer in sorted(peers, key=lambda a: a["snapshot"]["total_return_pct"], reverse=True):
+        if peer["id"] == adef.id:
+            continue
+        peer_return = peer["snapshot"]["total_return_pct"]
+        if peer_return + PEER_COPY_EDGE_PCT < own_return:
+            continue
+        for trade in peer.get("recent_trades", []):
+            if not str(trade.get("timestamp", "")).startswith(_today()):
+                continue
+            if trade.get("side") != "BUY":
+                continue
+            ticker = trade.get("ticker")
+            s = by_ticker.get(ticker)
+            if not s or ticker in copied:
+                continue
+            score = adef.score(s)
+            if _is_buyable(adef, s, score):
+                candidates.append((peer_return, peer["name"], ticker, s))
+                copied.add(ticker)
+
+    portfolio_return_pct = (equity / STARTING_CASH - 1) * 100
+    investable = max(portfolio.cash - equity * _cash_reserve_pct(portfolio_return_pct), 0)
+    cap = _position_cap(adef, portfolio_return_pct) * 0.65
+
+    for _, peer_name, ticker, s in candidates[:PEER_COPY_MAX_TRADES]:
+        if len(portfolio.positions) >= adef.max_positions and ticker not in portfolio.positions:
+            continue
+        price = prices[ticker]
+        current_val = (portfolio.positions[ticker].market_value(price)
+                       if ticker in portfolio.positions else 0.0)
+        target_val = cap * equity
+        spend = min(max(target_val - current_val, 0.0), investable)
+        if spend < max(price, equity * 0.0075):
+            continue
+        if portfolio.buy(ticker, spend / price, price,
+                         f"{adef.name}: copied {peer_name}'s leading buy"):
+            actions.append(f"BOUGHT {spend / price:.2f} {ticker} @ ${price:.2f} (copied {peer_name})")
+            investable -= spend
+
+    if not actions:
+        actions.append("No peer-copy trades — no leading buy passed this agent's filters.")
 
     curve = portfolio.record_equity(prices)
     portfolio.save()
@@ -297,6 +392,22 @@ def run_competition(suggestions: dict) -> dict:
             "actions": log["actions"],
         })
 
+    # Competition round: after everyone makes their own move, each strategy can
+    # copy better-ranked agents' same-day BUY trades if its own risk filters agree.
+    refreshed = []
+    for agent_out in agents_out:
+        adef = next(a for a in AGENTS if a.id == agent_out["id"])
+        log = _copy_peer_trades(adef, suggestions, agents_out)
+        curves[adef.id] = log["curve"]
+        agent_out = {
+            **agent_out,
+            "snapshot": log["snapshot"],
+            "recent_trades": log["recent_trades"],
+            "actions": agent_out["actions"] + log["actions"],
+        }
+        refreshed.append(agent_out)
+    agents_out = refreshed
+
     interim_leader_id = max(
         agents_out,
         key=lambda a: a["snapshot"]["total_return_pct"],
@@ -319,6 +430,15 @@ def run_competition(suggestions: dict) -> dict:
           "equity": a["snapshot"]["equity"], "return_pct": a["snapshot"]["total_return_pct"],
           "num_positions": a["snapshot"]["num_positions"]} for a in agents_out),
         key=lambda x: x["return_pct"], reverse=True)
+
+    ranks = {row["id"]: i + 1 for i, row in enumerate(leaderboard)}
+    leader_name = leaderboard[0]["name"] if leaderboard else None
+    for agent in agents_out:
+        adef = next(a for a in AGENTS if a.id == agent["id"])
+        agent["strategy_note"] = _daily_strategy_note(
+            adef, agent["snapshot"], agent["actions"],
+            ranks.get(agent["id"]), leader_name,
+        )
 
     view = {
         "updated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -344,12 +464,21 @@ def _publish_view(prices):
         curves[adef.id] = pf.record_equity(prices)
         agents_out.append({"id": adef.id, "name": adef.name, "style": adef.style,
                            "blurb": adef.blurb, "color": adef.color, "snapshot": snap,
-                           "recent_trades": pf.recent_trades(), "actions": []})
+                           "recent_trades": pf.recent_trades(), "actions": [],
+                           "strategy_note": _daily_strategy_note(adef, snap, [])})
     leaderboard = sorted(
         ({"id": a["id"], "name": a["name"], "style": a["style"], "color": a["color"],
           "equity": a["snapshot"]["equity"], "return_pct": a["snapshot"]["total_return_pct"],
           "num_positions": a["snapshot"]["num_positions"]} for a in agents_out),
         key=lambda x: x["return_pct"], reverse=True)
+    ranks = {row["id"]: i + 1 for i, row in enumerate(leaderboard)}
+    leader_name = leaderboard[0]["name"] if leaderboard else None
+    for agent in agents_out:
+        adef = next(a for a in AGENTS if a.id == agent["id"])
+        agent["strategy_note"] = _daily_strategy_note(
+            adef, agent["snapshot"], agent["actions"],
+            ranks.get(agent["id"]), leader_name,
+        )
     view = {"updated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "agents": agents_out, "leaderboard": leaderboard}
     store.write_json("agents_view", view)

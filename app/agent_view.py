@@ -30,6 +30,21 @@ def augment_agents_view(view: dict | None) -> dict:
     view = dict(view or {})
     agents = list(view.get("agents") or [])
     seen = {a.get("id") for a in agents}
+    defs = {a.id: a for a in AGENTS}
+
+    for agent in agents:
+        if agent.get("strategy_note"):
+            continue
+        adef = defs.get(agent.get("id"))
+        if not adef:
+            continue
+        snapshot = agent.get("snapshot") or _empty_snapshot()
+        cash_pct = snapshot.get("cash", 0) / max(snapshot.get("equity", 1), 1) * 100
+        agent["strategy_note"] = (
+            f"Daily strategy: run {adef.style.lower()} scoring, watch the other agents' "
+            f"same-day trades, copy only leading buys that pass this agent's filters, "
+            f"and keep about {cash_pct:.0f}% cash while risk is elevated."
+        )
 
     for adef in AGENTS:
         if adef.id in seen:
@@ -43,6 +58,11 @@ def augment_agents_view(view: dict | None) -> dict:
             "snapshot": _empty_snapshot(),
             "recent_trades": [],
             "actions": ["Ready — will start trading on the next scheduled run."],
+            "strategy_note": (
+                "Ready for the next scheduled run. This agent will publish a daily "
+                "competition strategy after it sees the current market signals and "
+                "the other agents' trades."
+            ),
         })
 
     leaderboard = sorted(

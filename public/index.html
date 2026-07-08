@@ -413,6 +413,8 @@
     <h2 class="sec">Agent detail</h2>
     <div class="toolbar" id="agentTabs"></div>
 
+    <div class="narrative" id="agentStrategy" style="margin:0 0 18px"><span class="tag">Daily strategy</span><div id="agentStrategyText">Loading…</div></div>
+
     <div class="grid cards4" id="agMetrics"></div>
 
     <h2 class="sec" style="margin-top:20px">Holdings allocation</h2>
@@ -714,6 +716,7 @@ function tradeCols(){return [
 function renderAgentDetail(){
   const a=agentById(selectedAgent); if(!a){return;}
   const s=a.snapshot,tot=s.total_return_pct;
+  $('#agentStrategyText').textContent=a.strategy_note||'This agent will publish its daily competition strategy after the next scheduled run.';
   $('#agMetrics').innerHTML=
     metric('Equity',money(s.equity),pct(tot),cls(tot))+
     metric('Return',pct(tot),'vs '+money0(s.starting_cash)+' start',cls(tot))+
