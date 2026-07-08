@@ -13,19 +13,34 @@ from datetime import datetime, timezone
 
 from . import store
 from .agents import AGENTS, AgentDef
-from .config import CASH_RESERVE_PCT
+from .config import CASH_RESERVE_PCT, STARTING_CASH
 from .portfolio import Portfolio
 
 
-SMART_CASH_RESERVE_PCT = max(CASH_RESERVE_PCT, 0.08)
-STOP_LOSS_PCT = -8.0
-WEAK_GAIN_EXIT_PCT = 10.0
+SMART_CASH_RESERVE_PCT = max(CASH_RESERVE_PCT, 0.22)
+DRAWDOWN_CASH_RESERVE_PCT = 0.45
+STOP_LOSS_PCT = -4.5
+WEAK_GAIN_EXIT_PCT = 6.0
+MIN_BUY_COMPOSITE = 0.7
+MAX_NORMAL_POSITION_PCT = 0.10
+MAX_DRAWDOWN_POSITION_PCT = 0.06
 
 
-def _target_weight(adef: AgentDef, score: float, volatility: float) -> float:
-    conviction = min(max(score, 0) / 3.0, 1.0)         # 0..1, less eager
-    vol_adj = 1.0 / (1.0 + max(volatility, 0.1) * 2.6) # damp volatile names
-    return min(conviction * vol_adj * adef.max_position_pct, adef.max_position_pct)
+def _cash_reserve_pct(portfolio_return_pct: float) -> float:
+    return DRAWDOWN_CASH_RESERVE_PCT if portfolio_return_pct < -2.0 else SMART_CASH_RESERVE_PCT
+
+
+def _position_cap(adef: AgentDef, portfolio_return_pct: float) -> float:
+    base = MAX_DRAWDOWN_POSITION_PCT if portfolio_return_pct < -2.0 else MAX_NORMAL_POSITION_PCT
+    return min(adef.max_position_pct, base)
+
+
+def _target_weight(adef: AgentDef, score: float, volatility: float,
+                   portfolio_return_pct: float) -> float:
+    cap = _position_cap(adef, portfolio_return_pct)
+    conviction = min(max(score - adef.buy_threshold, 0) / 3.0, 1.0)
+    vol_adj = 1.0 / (1.0 + max(volatility, 0.1) * 3.4)
+    return min(conviction * vol_adj * cap, cap)
 
 
 def _is_buyable(adef: AgentDef, s: dict, score: float) -> bool:
@@ -39,22 +54,27 @@ def _is_buyable(adef: AgentDef, s: dict, score: float) -> bool:
     breakout = _signal_score(s, "Breakout (52w channel)")
     rsi = _signal_score(s, "Momentum (RSI)")
 
-    if score < adef.buy_threshold or composite < -0.15:
+    chg_1d = indicators.get("chg_1d", 0.0) or 0.0
+
+    if score < adef.buy_threshold or composite < MIN_BUY_COMPOSITE:
         return False
-    if volatility > 1.05 and s.get("ticker") not in adef.focus_tickers:
+    if volatility > 0.85 and s.get("ticker") not in adef.focus_tickers:
         return False
-    if ret_1m < -18 and (trend < 0 or macd < 0):
+    if ret_1m < 3.0 and s.get("ticker") not in adef.focus_tickers:
         return False
-    if ret_1m > 45 and rsi < -0.5 and s.get("ticker") not in adef.focus_tickers:
+    if chg_1d < -1.0 and s.get("ticker") not in adef.focus_tickers:
+        return False
+    if ret_1m > 45 and rsi < -0.5:
+        return False
+    if trend < 0 or macd < -0.2:
         return False
 
-    # Contrarian agents may buy an oversold bounce, but only if MACD or trend is
-    # stabilizing. Everyone else needs trend, MACD, breakout, or a focus ticker.
+    # Even contrarian entries now need real stabilization; no blind dip-buying.
     if adef.id == "sage":
-        return rsi > 0 and (macd > 0 or trend > -0.25 or breakout > 0.25)
-    if s.get("ticker") in adef.focus_tickers and composite >= 0.15:
-        return trend > -0.75 or macd > -0.5
-    return trend > 0 or macd > 0.25 or breakout > 0.75
+        return rsi > 0 and trend > 0 and macd > 0
+    if s.get("ticker") in adef.focus_tickers:
+        return trend > 0.25 and macd > 0
+    return trend > 0.4 and (macd > 0.25 or breakout > 0.75)
 
 
 def _signal_score(s: dict, name: str) -> float:
@@ -69,6 +89,7 @@ def _sync_to_leader(adef: AgentDef, suggestions: dict, leader: AgentDef | None) 
     actions: list[str] = []
     sugg = suggestions.get("suggestions", [])
     prices = {s["ticker"]: s["price"] for s in sugg}
+    by_ticker = {s["ticker"]: s for s in sugg}
 
     if leader is None or leader.id == adef.id:
         curve = portfolio.record_equity(prices)
@@ -86,12 +107,19 @@ def _sync_to_leader(adef: AgentDef, suggestions: dict, leader: AgentDef | None) 
     equity = portfolio.equity(prices)
 
     target_weights = {}
+    leader_is_profitable = leader_equity >= STARTING_CASH
     if leader_equity > 0:
         for ticker, pos in leader_pf.positions.items():
-            if ticker in prices:
+            s = by_ticker.get(ticker)
+            price = prices.get(ticker)
+            unrealized_pct = (price / pos.avg_cost - 1) * 100 if price and pos.avg_cost else 0
+            if ticker in prices and (
+                leader_is_profitable
+                or (unrealized_pct >= 0 and s and _is_buyable(leader, s, leader.score(s)))
+            ):
                 target_weights[ticker] = min(
                     pos.market_value(prices[ticker]) / leader_equity,
-                    adef.max_position_pct,
+                    _position_cap(adef, (equity / STARTING_CASH - 1) * 100),
                 )
 
     # Sell names the leader no longer owns, plus trim oversized positions.
@@ -109,7 +137,8 @@ def _sync_to_leader(adef: AgentDef, suggestions: dict, leader: AgentDef | None) 
                 actions.append(f"TRIMMED {shares:.2f} {ticker} @ ${price:.2f}")
 
     equity = portfolio.equity(prices)
-    investable = max(portfolio.cash - equity * SMART_CASH_RESERVE_PCT, 0)
+    portfolio_return_pct = (equity / STARTING_CASH - 1) * 100
+    investable = max(portfolio.cash - equity * _cash_reserve_pct(portfolio_return_pct), 0)
     for ticker, weight in sorted(target_weights.items(), key=lambda x: x[1], reverse=True):
         if len(portfolio.positions) >= adef.max_positions and ticker not in portfolio.positions:
             continue
@@ -148,19 +177,26 @@ def run_cycle(adef: AgentDef, suggestions: dict,
     sugg = suggestions.get("suggestions", [])
     by_ticker = {s["ticker"]: s for s in sugg}
     prices = {s["ticker"]: s["price"] for s in sugg}
+    portfolio_return_pct = (portfolio.equity(prices) / STARTING_CASH - 1) * 100
 
-    # --- 1. Exits: drop holdings whose agent-score turned negative -----------
+    # --- 1. Exits: aggressively drop weak holdings and protect capital --------
     for ticker in list(portfolio.positions.keys()):
         s = by_ticker.get(ticker)
         price = prices.get(ticker, portfolio.positions[ticker].avg_cost)
         if s is None:
             continue
         sc = adef.score(s)
+        buyable_now = _is_buyable(adef, s, sc)
         unrealized_pct = (price / portfolio.positions[ticker].avg_cost - 1) * 100 \
             if portfolio.positions[ticker].avg_cost else 0.0
+        ret_1m = s.get("indicators", {}).get("ret_1m", 0.0) or 0.0
+        chg_1d = s.get("indicators", {}).get("chg_1d", 0.0) or 0.0
         should_exit = (
             sc <= adef.sell_threshold
             or unrealized_pct <= STOP_LOSS_PCT
+            or (unrealized_pct < 0 and not buyable_now)
+            or (portfolio_return_pct < -2.0 and unrealized_pct < 0)
+            or (ret_1m < 0 and chg_1d < 0 and sc < adef.buy_threshold)
             or (unrealized_pct >= WEAK_GAIN_EXIT_PCT and sc < 0.2)
         )
         if should_exit:
@@ -170,8 +206,41 @@ def run_cycle(adef: AgentDef, suggestions: dict,
                               reason):
                 actions.append(f"SOLD {shares:.2f} {ticker} @ ${price:.2f} ({sc:+.2f})")
 
+    # --- 1b. Migration/risk cleanup: enforce new smaller books and caps -------
+    equity = portfolio.equity(prices)
+    portfolio_return_pct = (equity / STARTING_CASH - 1) * 100
+    cap = _position_cap(adef, portfolio_return_pct)
+    ranked_holdings = []
+    for ticker, pos in portfolio.positions.items():
+        s = by_ticker.get(ticker, {})
+        price = prices.get(ticker, pos.avg_cost)
+        ranked_holdings.append((adef.score(s), ticker, price))
+
+    ranked_holdings.sort(reverse=True)
+    keep = {ticker for _, ticker, _ in ranked_holdings[:adef.max_positions]}
+    for _, ticker, price in ranked_holdings[adef.max_positions:]:
+        if ticker in portfolio.positions:
+            shares = portfolio.positions[ticker].shares
+            if portfolio.sell(ticker, shares, price,
+                              f"{adef.name}: reduce to max {adef.max_positions} positions"):
+                actions.append(f"SOLD {shares:.2f} {ticker} @ ${price:.2f} (risk cleanup)")
+
+    equity = portfolio.equity(prices)
+    for ticker in list(keep):
+        if ticker not in portfolio.positions:
+            continue
+        price = prices.get(ticker, portfolio.positions[ticker].avg_cost)
+        current_val = portfolio.positions[ticker].market_value(price)
+        max_val = equity * cap
+        if current_val > max_val * 1.1:
+            shares = (current_val - max_val) / price
+            if portfolio.sell(ticker, shares, price,
+                              f"{adef.name}: trim position above {cap:.0%} cap"):
+                actions.append(f"TRIMMED {shares:.2f} {ticker} @ ${price:.2f} (cap)")
+
     # --- 2. Entries / adds: top agent-score names ---------------------------
     equity = portfolio.equity(prices)
+    portfolio_return_pct = (equity / STARTING_CASH - 1) * 100
     scored = [(adef.score(s), s) for s in sugg]
     candidates = sorted([x for x in scored if _is_buyable(adef, x[1], x[0])],
                         key=lambda x: x[0], reverse=True)
@@ -181,11 +250,16 @@ def run_cycle(adef: AgentDef, suggestions: dict,
             continue
         ticker, price = s["ticker"], s["price"]
         vol = s.get("indicators", {}).get("volatility", 0.3)
-        target_val = _target_weight(adef, sc, vol) * equity
+        target_val = _target_weight(adef, sc, vol, portfolio_return_pct) * equity
         current_val = (portfolio.positions[ticker].market_value(price)
                        if ticker in portfolio.positions else 0.0)
+        if ticker in portfolio.positions:
+            pos = portfolio.positions[ticker]
+            unrealized_pct = (price / pos.avg_cost - 1) * 100 if pos.avg_cost else 0
+            if unrealized_pct < 0:
+                continue
         gap = target_val - current_val
-        investable = max(portfolio.cash - equity * SMART_CASH_RESERVE_PCT, 0)
+        investable = max(portfolio.cash - equity * _cash_reserve_pct(portfolio_return_pct), 0)
         spend = min(gap, investable)
         if spend < max(price, equity * 0.01):       # skip dust
             continue
