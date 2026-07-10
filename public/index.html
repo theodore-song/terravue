@@ -919,17 +919,19 @@ async function runAgent(){
   b.disabled=false;b.textContent='Run agent';}
 
 /* ---------- stock detail modal ---------- */
-let skData=null, skRange='1Y', skType='candle', skMA={50:true,200:true};
+let skData=null, skRange='1Y', skType='candle', skMA={50:true,200:true}, skTicker=null, skRefreshTimer=null, skRefreshing=false;
 const SK_RANGES=['1H','1D','5D','1M','6M','1Y','3Y','5Y','10Y','All'];
+const SK_LIVE_RANGES=new Set(['1H','1D','5D']);
 document.addEventListener('click', e=>{
   const el=e.target.closest('.tkr'); if(el) openStock(el.dataset.tkr);
 });
 document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeStock(); });
 
-function closeStock(){ $('#stockModal').classList.remove('open');
+function closeStock(){ $('#stockModal').classList.remove('open'); stopStockRefresh();
   ['sk','skVol','skMacd'].forEach(k=>{if(charts[k]){charts[k].destroy();charts[k]=null;}}); }
 
 async function openStock(ticker){
+  skTicker=ticker;
   const m=$('#stockModal'); m.classList.add('open');
   $('#stockBody').innerHTML=`<div class="empty"><span class="spinner" style="border-top-color:var(--blue)"></span> Loading ${ticker}…</div>`;
   try{
@@ -980,6 +982,7 @@ function renderStock(d){
         <button class="${skMA[200]?'on':''}" onclick="toggleMA(200)">MA200</button>
       </div>
     </div>
+    <div class="muted small" id="skLiveNote" style="margin:-2px 0 8px"></div>
     <div class="sk-chart"><canvas id="skChart"></canvas></div>
     <div class="sk-pane"><div class="sk-pane-l">Volume</div><canvas id="skVol"></canvas></div>
     <div class="sk-pane"><div class="sk-pane-l">MACD (12,26,9)</div><canvas id="skMacd"></canvas></div>
@@ -1039,9 +1042,10 @@ function renderStock(d){
       <p class="sk-prof" style="margin-top:8px;color:var(--muted)">${[p.country,p.employees?Number(p.employees).toLocaleString()+' employees':null].filter(Boolean).join(' · ')}${p.website?` · <a href="${p.website}" target="_blank" rel="noopener">${p.website.replace(/^https?:\/\//,'')}</a>`:''}</p>`:''}
   `;
   drawSkCharts();
+  scheduleStockRefresh();
 }
 
-function setSkRange(r){ skRange=r; drawSkControls(); drawSkCharts(); }
+function setSkRange(r){ skRange=r; drawSkControls(); drawSkCharts(); scheduleStockRefresh(); }
 function setSkType(tp){ skType=tp; drawSkControls(); drawSkCharts(); }
 function toggleMA(n){ skMA[n]=!skMA[n]; drawSkControls(); drawSkCharts(); }
 function drawSkControls(){
@@ -1051,6 +1055,36 @@ function drawSkControls(){
     <button class="${skType==='line'?'on':''}" onclick="setSkType('line')">Line</button>
     <button class="${skMA[50]?'on':''}" onclick="toggleMA(50)">MA50</button>
     <button class="${skMA[200]?'on':''}" onclick="toggleMA(200)">MA200</button>`;
+  updateLiveNote();
+}
+
+function stopStockRefresh(){if(skRefreshTimer){clearInterval(skRefreshTimer);skRefreshTimer=null;}}
+function updateLiveNote(text){
+  const el=$('#skLiveNote'); if(!el)return;
+  if(SK_LIVE_RANGES.has(skRange)){
+    el.textContent=text||'Live short-range chart: refreshes about every minute while this window is open.';
+  }else el.textContent='Longer ranges use cached daily/weekly chart data.';
+}
+function scheduleStockRefresh(){
+  stopStockRefresh(); updateLiveNote();
+  if(!SK_LIVE_RANGES.has(skRange) || !skTicker || !$('#stockModal').classList.contains('open'))return;
+  refreshStockIntraday();
+  skRefreshTimer=setInterval(refreshStockIntraday,60000);
+}
+async function refreshStockIntraday(){
+  if(skRefreshing || !skTicker || !SK_LIVE_RANGES.has(skRange))return;
+  skRefreshing=true; updateLiveNote('Refreshing short-range chart…');
+  try{
+    const d=await fetch('/api/stock/'+encodeURIComponent(skTicker)+'?intraday=true&t='+Date.now()).then(r=>r.json());
+    if(d&&!d.error){
+      skData={...skData,...d,series:{...(skData?.series||{}),...(d.series||{})}};
+      drawSkCharts();
+      updateLiveNote('Short-range chart refreshed '+new Date().toLocaleTimeString()+'. Next update in about 1 minute.');
+    }else updateLiveNote('Short-range refresh skipped; live chart data is temporarily unavailable.');
+  }catch(e){
+    updateLiveNote('Short-range refresh failed; trying again in about 1 minute.');
+  }
+  skRefreshing=false;
 }
 
 function sma(arr,n){const out=Array(arr.length).fill(null);let s=0;for(let i=0;i<arr.length;i++){s+=arr[i];if(i>=n)s-=arr[i-n];if(i>=n-1)out[i]=s/n;}return out;}

@@ -42,19 +42,22 @@ def get_agents():
 
 
 @app.get("/api/stock/{ticker}")
-def get_stock(ticker: str):
+def get_stock(ticker: str, intraday: bool = False):
     from . import stockinfo
     av = store.read_json("agents_view")
     pre = store.read_json("sd:" + ticker.upper().strip())
     if pre:
-        if not (pre.get("series") or {}).get("intraday_1d"):
-            live = stockinfo.get_stock_detail(ticker, av)
+        if intraday or not (pre.get("series") or {}).get("intraday_1d"):
+            live = stockinfo.get_stock_detail(ticker, av, force_intraday=intraday)
             for key in ("intraday_1d", "intraday_5d"):
                 if (live.get("series") or {}).get(key):
                     pre.setdefault("series", {})[key] = live["series"][key]
+            for key in ("price", "chg_1d"):
+                if live.get(key) is not None:
+                    pre[key] = live[key]
         pre["holders"] = stockinfo._holders_for(ticker.upper().strip(), av)
         return pre
-    return stockinfo.get_stock_detail(ticker, av)  # fallback (works off non-blocked IPs)
+    return stockinfo.get_stock_detail(ticker, av, force_intraday=intraday)  # fallback
 
 
 @app.get("/api/equity-history")

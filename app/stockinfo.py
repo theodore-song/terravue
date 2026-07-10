@@ -154,10 +154,11 @@ _CACHE: dict[str, tuple[float, dict]] = {}
 _CACHE_TTL = 60 * 30  # 30 min
 
 
-def get_stock_detail(ticker: str, agents_view: dict | None = None) -> dict:
+def get_stock_detail(ticker: str, agents_view: dict | None = None,
+                     force_intraday: bool = False) -> dict:
     ticker = ticker.upper().strip()
     cached = _CACHE.get(ticker)
-    if cached and (_time.time() - cached[0]) < _CACHE_TTL:
+    if cached and (_time.time() - cached[0]) < _CACHE_TTL and not force_intraday:
         d = dict(cached[1])
         d["holders"] = _holders_for(ticker, agents_view)   # keep holders fresh
         return d
