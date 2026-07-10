@@ -21,11 +21,23 @@ def _fmt_score(v) -> str:
         return "n/a"
 
 
+_TICKER_STOPWORDS = {
+    "A", "AI", "AM", "AN", "ARE", "AS", "AT", "BE", "BEST", "BUY", "BY", "CAN",
+    "DAY", "DO", "FOR", "GO", "HAS", "HOLD", "HOW", "I", "IF", "IN", "IS",
+    "IT", "ME", "MY", "NO", "NOW", "OF", "ON", "OR", "SELL", "SO", "THE",
+    "TO", "TOP", "UP", "US", "VS", "WHAT", "WHY",
+}
+
+
 def _find_tickers(message: str, suggestions: dict) -> list[str]:
     known = {s.get("ticker") for s in suggestions.get("suggestions", [])}
     found = []
-    for token in re.findall(r"\b[A-Z]{1,5}\b", message.upper()):
-        if token in known and token not in found:
+    for raw in re.findall(r"\$?[A-Za-z]{1,5}\b", message):
+        explicit = raw.startswith("$") or raw.isupper()
+        token = raw.replace("$", "").upper()
+        if token in _TICKER_STOPWORDS and not raw.startswith("$"):
+            continue
+        if token in known and token not in found and (explicit or len(token) >= 2):
             found.append(token)
     return found[:5]
 

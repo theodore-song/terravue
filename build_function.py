@@ -71,6 +71,11 @@ def stock(ticker: str):
     av = store.read_json("agents_view")
     pre = store.read_json("sd:" + ticker.upper().strip())
     if pre:
+        if not (pre.get("series") or {}).get("intraday_1d"):
+            live = stockinfo.get_stock_detail(ticker, av)
+            for key in ("intraday_1d", "intraday_5d"):
+                if (live.get("series") or {}).get(key):
+                    pre.setdefault("series", {})[key] = live["series"][key]
         pre["holders"] = stockinfo._holders_for(ticker.upper().strip(), av)
         return pre
     return stockinfo.get_stock_detail(ticker, av)
