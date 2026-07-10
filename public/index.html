@@ -1143,7 +1143,7 @@ function ema(arr,n){const out=Array(arr.length).fill(null);const k=2/(n+1);let p
 function macd(closes){const f=ema(closes,12),s=ema(closes,26);const line=closes.map((_,i)=>f[i]-s[i]);const sig=ema(line,9);const hist=line.map((v,i)=>v-sig[i]);return {line,sig,hist};}
 function stockSeriesForRange(){
   const series=skData?.series||{};
-  if(skRange==='1H' && series.intraday_1d)return {ser:series.intraday_1d,count:12,unit:'minute',intraday:true};
+  if(skRange==='1H' && series.intraday_1d)return {ser:series.intraday_1d,count:60,unit:'minute',intraday:true};
   if(skRange==='1D' && series.intraday_1d)return {ser:series.intraday_1d,count:99999,unit:'hour',intraday:true};
   if(skRange==='5D' && series.intraday_5d)return {ser:series.intraday_5d,count:99999,unit:'day',intraday:true};
   const useWeekly=['3Y','5Y','10Y','All'].includes(skRange);

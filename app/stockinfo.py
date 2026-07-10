@@ -120,6 +120,42 @@ def _ohlcv(ticker: str, rng: str, interval: str) -> dict | None:
     return None
 
 
+def _spark_ohlcv(ticker: str, rng: str, interval: str) -> dict | None:
+    """Fallback Yahoo spark endpoint, useful for compact intraday series."""
+    url = (f"https://query1.finance.yahoo.com/v7/finance/spark?symbols="
+           f"{urllib.parse.quote(ticker)}&range={urllib.parse.quote(rng)}"
+           f"&interval={urllib.parse.quote(interval)}")
+    try:
+        d = json.load(_get(url))
+        results = d.get("spark", {}).get("result") or []
+        response = (results[0].get("response") or [None])[0] if results else None
+        if not response:
+            return None
+        ts = response.get("timestamp", []) or []
+        quote = ((response.get("indicators") or {}).get("quote") or [{}])[0]
+        c = quote.get("close", []) or []
+        o = quote.get("open", []) or c
+        h = quote.get("high", []) or c
+        l = quote.get("low", []) or c
+        v = quote.get("volume", []) or []
+        t2, o2, h2, l2, c2, v2 = [], [], [], [], [], []
+        for i, tt in enumerate(ts):
+            if i < len(c) and c[i] is not None:
+                close = float(c[i])
+                t2.append(int(tt))
+                o2.append(round(float(o[i]), 4) if i < len(o) and o[i] is not None else round(close, 4))
+                h2.append(round(float(h[i]), 4) if i < len(h) and h[i] is not None else round(close, 4))
+                l2.append(round(float(l[i]), 4) if i < len(l) and l[i] is not None else round(close, 4))
+                c2.append(round(close, 4))
+                v2.append(int(v[i]) if i < len(v) and v[i] is not None else 0)
+        if not t2:
+            return None
+        return {"meta": response.get("meta", {}), "t": t2, "o": o2, "h": h2, "l": l2, "c": c2, "v": v2}
+    except Exception as exc:
+        print(f"[stockinfo] spark {ticker} {rng}/{interval}: {exc}")
+        return None
+
+
 def get_live_prices(tickers: list[str]) -> dict[str, float]:
     """Best-effort current prices from Yahoo's quote endpoint."""
     tickers = sorted({t.upper().strip() for t in tickers if t})
@@ -139,7 +175,9 @@ def get_live_prices(tickers: list[str]) -> dict[str, float]:
             print(f"[stockinfo] live quote batch failed: {exc}")
     missing = [t for t in tickers if t not in out]
     for ticker in missing[:80]:
-        chart = _ohlcv(ticker, "1d", "5m") or _ohlcv(ticker, "5d", "15m")
+        chart = (_ohlcv(ticker, "1d", "1m") or _spark_ohlcv(ticker, "1d", "1m")
+                 or _ohlcv(ticker, "1d", "5m") or _spark_ohlcv(ticker, "1d", "5m")
+                 or _ohlcv(ticker, "5d", "15m") or _spark_ohlcv(ticker, "5d", "15m"))
         try:
             if chart and chart.get("c"):
                 out[ticker] = float(chart["c"][-1])
@@ -196,8 +234,9 @@ def get_stock_detail(ticker: str, agents_view: dict | None = None,
         return {"ticker": ticker,
                 "error": "Live data is temporarily unavailable (rate limited). Try again shortly."}
     weekly = _ohlcv(ticker, "max", "1wk")
-    intraday_1d = _ohlcv(ticker, "1d", "5m")
-    intraday_5d = _ohlcv(ticker, "5d", "15m")
+    intraday_1d = (_ohlcv(ticker, "1d", "1m") or _spark_ohlcv(ticker, "1d", "1m")
+                   or _ohlcv(ticker, "1d", "5m") or _spark_ohlcv(ticker, "1d", "5m"))
+    intraday_5d = _ohlcv(ticker, "5d", "15m") or _spark_ohlcv(ticker, "5d", "15m")
 
     closes = daily["c"]
     wcloses = weekly["c"] if weekly else []
