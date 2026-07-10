@@ -137,6 +137,14 @@ def get_live_prices(tickers: list[str]) -> dict[str, float]:
                     out[sym.upper()] = float(px)
         except Exception as exc:
             print(f"[stockinfo] live quote batch failed: {exc}")
+    missing = [t for t in tickers if t not in out]
+    for ticker in missing[:80]:
+        chart = _ohlcv(ticker, "1d", "5m") or _ohlcv(ticker, "5d", "15m")
+        try:
+            if chart and chart.get("c"):
+                out[ticker] = float(chart["c"][-1])
+        except (TypeError, ValueError):
+            continue
     return out
 
 
