@@ -21,6 +21,7 @@ _ALWAYS_ENRICH = set(POPULAR) | {
 
 _DAILY_CAP = 400     # ~1.5y of daily bars
 _WEEKLY_CAP = 800    # ~15y of weekly bars
+_INTRADAY_CAP = 420  # enough 5-minute/15-minute bars for 1H, 1D and 5D charts
 
 
 def _clean(v):
@@ -73,15 +74,40 @@ def _fetch_weekly(tickers, batch=200):
     return out
 
 
+def _fetch_intraday(tickers, period, interval, batch=120):
+    import yfinance as yf
+    out = {}
+    for i in range(0, len(tickers), batch):
+        chunk = tickers[i:i + batch]
+        try:
+            raw = yf.download(chunk, period=period, interval=interval, auto_adjust=True,
+                              progress=False, group_by="ticker", threads=True)
+        except Exception as exc:
+            print(f"[details] intraday {period}/{interval} batch failed: {exc}")
+            continue
+        multi = hasattr(raw.columns, "levels")
+        for t in chunk:
+            try:
+                df = raw[t] if multi else raw
+                df = df.dropna(how="all")
+                if not df.empty:
+                    out[t] = df
+            except Exception:
+                continue
+    return out
+
+
 def _ret(closes, k):
     if len(closes) <= k or closes[-k - 1] == 0:
         return None
     return (closes[-1] / closes[-k - 1] - 1) * 100
 
 
-def _detail(ticker, sugg, daily_df, weekly_df):
+def _detail(ticker, sugg, daily_df, weekly_df, day_df=None, five_day_df=None):
     daily = _series(daily_df, _DAILY_CAP)
     weekly = _series(weekly_df, _WEEKLY_CAP)
+    intraday_1d = _series(day_df, _INTRADAY_CAP)
+    intraday_5d = _series(five_day_df, _INTRADAY_CAP)
     closes = [c for c in (daily["c"] if daily else []) if c is not None]
     wcloses = [c for c in (weekly["c"] if weekly else []) if c is not None]
     ind = (sugg or {}).get("indicators", {})
@@ -92,7 +118,12 @@ def _detail(ticker, sugg, daily_df, weekly_df):
         "price": (sugg or {}).get("price") or (closes[-1] if closes else None),
         "chg_1d": ind.get("chg_1d"),
         "fiftyTwoWeekHigh": hi, "fiftyTwoWeekLow": lo,
-        "series": {"daily": daily, "weekly": weekly},
+        "series": {
+            "intraday_1d": intraday_1d,
+            "intraday_5d": intraday_5d,
+            "daily": daily,
+            "weekly": weekly,
+        },
         "technicals": {
             "rsi14": ind.get("rsi14"),
             "ret_1m": ind.get("ret_1m"),
@@ -166,8 +197,17 @@ def build_and_store(suggestions: dict, agents_view: dict,
     daily = data.get_histories(tickers, period="1y")     # OHLCV daily (cached)
     print("[details] fetching weekly history...")
     weekly = _fetch_weekly(tickers)
+    print("[details] fetching intraday history...")
+    intraday_1d = _fetch_intraday(tickers, "1d", "5m")
+    intraday_5d = _fetch_intraday(tickers, "5d", "15m")
 
-    details = {t: _detail(t, sugg_by.get(t), daily.get(t), weekly.get(t)) for t in tickers}
+    details = {
+        t: _detail(
+            t, sugg_by.get(t), daily.get(t), weekly.get(t),
+            intraday_1d.get(t), intraday_5d.get(t),
+        )
+        for t in tickers
+    }
 
     held = {h["ticker"] for a in agents_view.get("agents", [])
             for h in a.get("snapshot", {}).get("holdings", [])}

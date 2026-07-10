@@ -214,6 +214,20 @@
   .idea .why{font-size:13px;color:#cdd9e1;margin:10px 0 12px;line-height:1.55}
   .factor-row{display:flex;gap:6px;flex-wrap:wrap}
   .factor{font-size:11px;color:var(--muted);border:1px solid var(--border2);border-radius:999px;padding:3px 8px;background:rgba(9,13,19,.25)}
+  .conf-link{border:1px solid rgba(226,248,156,.35);background:var(--up-soft);color:var(--lime2);
+    border-radius:999px;padding:4px 9px;font-size:12px;font-weight:800;cursor:pointer;display:inline-block}
+  .conf-link:hover{filter:brightness(1.15)}
+  .chat-shell{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:18px;margin-top:18px}
+  .chat-box{background:rgba(19,29,39,.66);border:1px solid var(--border);border-radius:var(--r-lg);min-height:420px;display:flex;flex-direction:column}
+  .chat-log{flex:1;padding:16px;overflow:auto;display:grid;gap:12px;align-content:start}
+  .msg{max-width:78%;border-radius:12px;padding:11px 13px;font-size:14px;white-space:pre-wrap}
+  .msg.user{justify-self:end;background:var(--accent-soft);border:1px solid rgba(63,124,172,.4)}
+  .msg.ai{justify-self:start;background:rgba(9,13,19,.42);border:1px solid var(--border)}
+  .chat-form{display:flex;gap:10px;padding:12px;border-top:1px solid var(--border)}
+  .chat-form input{flex:1;background:var(--surface);border:1px solid var(--border2);border-radius:9px;color:var(--text);padding:10px 12px}
+  .chat-side{background:rgba(19,29,39,.56);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px}
+  .quick-q{display:block;width:100%;text-align:left;background:var(--surface);color:var(--text);border:1px solid var(--border2);border-radius:9px;padding:9px 10px;margin-top:8px;cursor:pointer}
+  .quick-q:hover{border-color:var(--blue)}
 
   /* ---- competition ---- */
   .lbcard{display:flex;flex-direction:column;gap:4px}
@@ -278,6 +292,8 @@
     .mover{align-items:flex-start;gap:12px}
     .modal{padding:16px 10px}
     .modal-card{padding:20px 16px}
+    .chat-shell{grid-template-columns:1fr}
+    .msg{max-width:94%}
   }
   @media(max-width:460px){
     .stat-row,.cards4{grid-template-columns:1fr}
@@ -295,6 +311,7 @@
     <button data-tab="overview">Overview</button>
     <button data-tab="markets">Markets</button>
     <button data-tab="suggestions">Suggestions</button>
+    <button data-tab="chat">AI Chat</button>
     <button data-tab="signals">Signals</button>
     <button data-tab="competition">Competition</button>
   </nav>
@@ -341,6 +358,8 @@
         <h3>Overview</h3><p>The daily market read: index strip, breadth, signal mix, and the day's top movers.</p></div>
       <div class="feat" onclick="showTab('suggestions')"><div class="ic" style="background:var(--sage)">◎</div>
         <h3>Long-term suggestions</h3><p>Calmer trade ideas that blend momentum, earnings, news, profitability, growth and sales.</p></div>
+      <div class="feat" onclick="showTab('chat')"><div class="ic" style="background:var(--blue)">?</div>
+        <h3>AI stock chat</h3><p>Ask about tickers, long-term confidence, agent holdings, signals and recent news.</p></div>
       <div class="feat" onclick="showTab('signals')"><div class="ic" style="background:var(--lime1)">⌕</div>
         <h3>Signal screener</h3><p>All 1,000 names scored from trend, RSI, MACD and breakout. Search, filter and sort.</p></div>
     </div>
@@ -404,6 +423,30 @@
     <div class="idea-grid" id="ltCards"></div>
     <h2 class="sec">Long-term idea table <span class="muted small" style="text-transform:none;letter-spacing:0;font-weight:400">— click a ticker for fundamentals</span></h2>
     <div class="tablewrap"><table id="longTable"><thead></thead><tbody></tbody></table></div>
+  </section>
+
+  <!-- AI CHAT -->
+  <section class="panel" id="tab-chat">
+    <h1 class="page-h">AI stock chat</h1>
+    <p class="page-sub">Ask about a ticker, why a long-term confidence score is high or low, what agents are holding, or which setups look strongest.</p>
+    <div class="chat-shell">
+      <div class="chat-box">
+        <div class="chat-log" id="chatLog">
+          <div class="msg ai">Ask me about a stock like NVDA, AAPL or MSFT, or ask “why is the top long-term idea confident?” I’ll answer from Terravue’s latest signals, suggestions, agent holdings and news.</div>
+        </div>
+        <form class="chat-form" onsubmit="sendChat(event)">
+          <input id="chatInput" placeholder="Ask about a stock…" autocomplete="off" />
+          <button class="btn" id="chatSend" type="submit">Send</button>
+        </form>
+      </div>
+      <aside class="chat-side">
+        <h2 class="sec" style="margin-top:0">Try asking</h2>
+        <button class="quick-q" onclick="askQuick('What are the best longer-term ideas right now?')">Best longer-term ideas</button>
+        <button class="quick-q" onclick="askQuick('Why is the top long-term stock confident?')">Explain top confidence</button>
+        <button class="quick-q" onclick="askQuick('Which stocks are agents holding?')">Agent holdings</button>
+        <button class="quick-q" onclick="askQuick('What should I watch today?')">What to watch today</button>
+      </aside>
+    </div>
   </section>
 
   <!-- SIGNALS -->
@@ -663,8 +706,20 @@ function longTermIdeas(){
     return {ticker:s.ticker,price:s.price,score:Math.round(score*10)/10,confidence:Math.round(Math.max(0,Math.min(100,50+score/2))),
       horizon:'3-12 months',call:score>=35?'Long-term buy':'Watchlist',
       reason:(parts.join('; ')||'best available blend of momentum and signal strength')+'. Fundamentals will be folded in after the next daily detail refresh.',
+      confidence_explanation:`Confidence is based on the currently available blend: momentum ${Math.round(momentum*100)}, technical signal ${Math.round(signal*100)}, news tone ${Math.round(newsScore*100)}. Earnings, profitability, growth and sales will be included after the next daily detail refresh.`,
       factors:{momentum:Math.round(momentum*100),earnings:null,news:Math.round(newsScore*100),profitability:null,growth:null,sales:null}};
   }).sort((a,b)=>b.score-a.score).slice(0,14);
+}
+function ideaByTicker(t){return longTermIdeas().find(x=>x.ticker===t);}
+function confidenceText(x){
+  if(!x)return 'No confidence explanation is available yet.';
+  if(x.confidence_explanation)return x.confidence_explanation;
+  const f=x.factors||{};
+  return `Confidence is ${x.confidence}% because Terravue blended momentum (${f.momentum??'pending'}), earnings (${f.earnings??'pending'}), news (${f.news??'pending'}), profitability (${f.profitability??'pending'}), growth (${f.growth??'pending'}), and sales (${f.sales??'pending'}). ${x.reason||''}`;
+}
+function showConfidence(ticker){
+  const x=ideaByTicker(ticker);
+  alert(`${ticker} confidence\n\n${confidenceText(x)}`);
 }
 function factorPills(f){
   const labels=[['momentum','Momentum'],['earnings','Earnings'],['news','News'],['profitability','Profit'],['growth','Growth'],['sales','Sales']];
@@ -674,7 +729,7 @@ function longCols(){return [
   {key:'ticker',label:'Ticker',defaultDir:'asc',get:x=>x.ticker,cell:x=>`<td class="b">${tkr(x.ticker)}</td>`},
   {key:'call',label:'Call',defaultDir:'asc',get:x=>x.call,cell:x=>`<td><span class="pill ${x.call==='Long-term buy'?'BUY':'HOLD'}">${x.call}</span></td>`},
   {key:'score',label:'LT score',num:true,get:x=>x.score,cell:x=>`<td class="num ${cls(x.score)}">${x.score>=0?'+':''}${Number(x.score).toFixed(1)}</td>`},
-  {key:'conf',label:'Confidence',num:true,get:x=>x.confidence,cell:x=>`<td class="num">${fmt(x.confidence)}%</td>`},
+  {key:'conf',label:'Confidence',num:true,get:x=>x.confidence,cell:x=>`<td class="num"><button class="conf-link" onclick="event.stopPropagation();showConfidence('${x.ticker}')">${fmt(x.confidence)}%</button></td>`},
   {key:'price',label:'Price',num:true,get:x=>x.price,cell:x=>`<td class="num">${x.price!=null?money(x.price):'—'}</td>`},
   {key:'horizon',label:'Horizon',defaultDir:'asc',get:x=>x.horizon,cell:x=>`<td>${x.horizon||'3-12 months'}</td>`},
   {key:'why',label:'Why',defaultDir:'asc',get:x=>x.reason,cell:x=>`<td class="small muted">${x.reason}</td>`},
@@ -687,11 +742,33 @@ function renderSuggestions(){
     : 'No longer-term suggestions have been published yet.';
   $('#ltCards').innerHTML=top.map(x=>`<div class="idea">
     <div class="idea-top"><div><div class="tk">${tkr(x.ticker)}</div><div class="muted small">${x.horizon||'3-12 months'} · ${x.price!=null?money(x.price):'—'}</div></div>
-      <div style="text-align:right"><span class="pill ${x.call==='Long-term buy'?'BUY':'HOLD'}">${x.call}</span><div class="score ${cls(x.score)}" style="margin-top:6px;font-weight:800">${x.score>=0?'+':''}${Number(x.score).toFixed(1)}</div></div></div>
+      <div style="text-align:right"><span class="pill ${x.call==='Long-term buy'?'BUY':'HOLD'}">${x.call}</span><div class="score ${cls(x.score)}" style="margin-top:6px;font-weight:800">${x.score>=0?'+':''}${Number(x.score).toFixed(1)}</div><button class="conf-link" style="margin-top:7px" onclick="event.stopPropagation();showConfidence('${x.ticker}')">${fmt(x.confidence)}% confidence</button></div></div>
     <div class="why">${x.reason}</div><div class="factor-row">${factorPills(x.factors)}</div>
   </div>`).join('')||'<p class="empty">No long-term ideas yet.</p>';
   initTable('longTable',longCols(),ideas,'score','No long-term suggestions.');
 }
+
+/* ---------- AI chat ---------- */
+function appendChat(role,text){
+  const log=$('#chatLog'); if(!log)return;
+  log.insertAdjacentHTML('beforeend',`<div class="msg ${role}">${String(text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</div>`);
+  log.scrollTop=log.scrollHeight;
+}
+async function sendChat(e){
+  if(e)e.preventDefault();
+  const input=$('#chatInput'), btn=$('#chatSend');
+  const msg=(input.value||'').trim(); if(!msg)return;
+  appendChat('user',msg); input.value=''; btn.disabled=true; btn.textContent='Thinking…';
+  try{
+    const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg})});
+    const d=await r.json();
+    appendChat('ai',d.answer||'I could not answer that from the current data.');
+  }catch(err){
+    appendChat('ai','The chat endpoint did not respond. Try again in a moment.');
+  }
+  btn.disabled=false; btn.textContent='Send';
+}
+function askQuick(q){showTab('chat');$('#chatInput').value=q;sendChat();}
 
 /* ---------- signals screener ---------- */
 function convictionBar(score){const w=Math.min(Math.abs(score)/2,1)*40;
@@ -843,7 +920,7 @@ async function runAgent(){
 
 /* ---------- stock detail modal ---------- */
 let skData=null, skRange='1Y', skType='candle', skMA={50:true,200:true};
-const SK_RANGES=['1M','6M','1Y','3Y','5Y','10Y','All'];
+const SK_RANGES=['1H','1D','5D','1M','6M','1Y','3Y','5Y','10Y','All'];
 document.addEventListener('click', e=>{
   const el=e.target.closest('.tkr'); if(el) openStock(el.dataset.tkr);
 });
@@ -979,15 +1056,24 @@ function drawSkControls(){
 function sma(arr,n){const out=Array(arr.length).fill(null);let s=0;for(let i=0;i<arr.length;i++){s+=arr[i];if(i>=n)s-=arr[i-n];if(i>=n-1)out[i]=s/n;}return out;}
 function ema(arr,n){const out=Array(arr.length).fill(null);const k=2/(n+1);let prev=null;for(let i=0;i<arr.length;i++){const v=arr[i];prev=prev==null?v:v*k+prev*(1-k);out[i]=prev;}return out;}
 function macd(closes){const f=ema(closes,12),s=ema(closes,26);const line=closes.map((_,i)=>f[i]-s[i]);const sig=ema(line,9);const hist=line.map((v,i)=>v-sig[i]);return {line,sig,hist};}
+function stockSeriesForRange(){
+  const series=skData?.series||{};
+  if(skRange==='1H' && series.intraday_1d)return {ser:series.intraday_1d,count:12,unit:'minute',intraday:true};
+  if(skRange==='1D' && series.intraday_1d)return {ser:series.intraday_1d,count:99999,unit:'hour',intraday:true};
+  if(skRange==='5D' && series.intraday_5d)return {ser:series.intraday_5d,count:99999,unit:'day',intraday:true};
+  const useWeekly=['3Y','5Y','10Y','All'].includes(skRange);
+  const ser=useWeekly?series.weekly:series.daily;
+  const counts={'1H':2,'1D':2,'5D':5,'1M':22,'6M':126,'1Y':252,'3Y':156,'5Y':260,'10Y':520,'All':99999};
+  return {ser,count:counts[skRange]||252,unit:useWeekly?'year':(counts[skRange]<=22?'day':'month'),intraday:false};
+}
 
 function drawSkCharts(){
   if(!skData||!skData.series) return;
   ['sk','skVol','skMacd'].forEach(k=>{if(charts[k]){charts[k].destroy();charts[k]=null;}});
-  const useWeekly=['3Y','5Y','10Y','All'].includes(skRange);
-  const ser=useWeekly?skData.series.weekly:skData.series.daily;
+  const cfg=stockSeriesForRange();
+  const ser=cfg.ser;
   if(!ser){ return; }
-  const counts={'1M':22,'6M':126,'1Y':252,'3Y':156,'5Y':260,'10Y':520,'All':99999};
-  const n=Math.min(counts[skRange]||252, ser.t.length);
+  const n=Math.min(cfg.count||252, ser.t.length);
   // compute indicators over the FULL series, then slice the last n
   const fullC=ser.c.map(x=>x==null?0:x);
   const ma50=sma(fullC,50), ma200=sma(fullC,200), mac=macd(fullC);
@@ -996,7 +1082,7 @@ function drawSkCharts(){
   const pts=(arr)=>X.map((x,i)=>({x, y:arr[s+i]}));
   const ohlc=X.map((x,i)=>({x, o:ser.o[s+i], h:ser.h[s+i], l:ser.l[s+i], c:ser.c[s+i]}));
   const up=ser.c[ser.c.length-1]>=ser.c[s];
-  const axisX={type:'time',time:{unit:useWeekly?'year':(n<=22?'day':'month')},
+  const axisX={type:'time',time:{unit:cfg.unit},
     grid:{display:false},ticks:{color:'#8ea4af',maxTicksLimit:7,autoSkip:true}};
 
   const priceDs=[];

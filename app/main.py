@@ -1,7 +1,7 @@
 """FastAPI server: serves the dashboard and JSON APIs (full local app)."""
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 
 from . import advisor, store
@@ -60,6 +60,16 @@ def equity_history():
 @app.get("/api/news")
 def get_news():
     return store.read_json("news_feed") or {"reactions": [], "headlines": []}
+
+
+@app.post("/api/chat")
+async def chat(request: Request):
+    from . import chat as stock_chat
+    body = await request.json()
+    suggestions = advisor.load_suggestions() or {"suggestions": []}
+    agents = augment_agents_view(store.read_json("agents_view"))
+    news = store.read_json("news_feed") or {"reactions": [], "headlines": []}
+    return stock_chat.answer(body.get("message", ""), suggestions, agents, news)
 
 
 @app.post("/api/run-agent")

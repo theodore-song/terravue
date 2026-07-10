@@ -172,6 +172,14 @@ def _long_term_score(s: dict, detail: dict | None, news_by: dict[str, float]) ->
     if cautions:
         reason += ". Watch: " + "; ".join(cautions[:2])
 
+    explanation = (
+        f"Confidence is {round(max(0, min(100, 50 + score * 50)), 0):.0f}% because the model "
+        f"weighted momentum ({momentum * 100:+.0f}), technical signal ({signal * 100:+.0f}), "
+        f"profitability ({profitability * 100:+.0f}), growth ({growth * 100:+.0f}), "
+        f"sales scale ({sales * 100:+.0f}), analyst upside ({analyst * 100:+.0f}), "
+        f"and news tone ({news_score * 100:+.0f})."
+    )
+
     return {
         "ticker": ticker,
         "price": s.get("price"),
@@ -180,6 +188,7 @@ def _long_term_score(s: dict, detail: dict | None, news_by: dict[str, float]) ->
         "horizon": "3-12 months",
         "call": "Long-term buy" if score >= 0.35 else "Watchlist",
         "reason": reason,
+        "confidence_explanation": explanation,
         "factors": {
             "momentum": round(momentum * 100, 0),
             "earnings": round((earnings_growth or 0.0) * 100, 1) if earnings_growth is not None else None,

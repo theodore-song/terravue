@@ -167,6 +167,8 @@ def get_stock_detail(ticker: str, agents_view: dict | None = None) -> dict:
         return {"ticker": ticker,
                 "error": "Live data is temporarily unavailable (rate limited). Try again shortly."}
     weekly = _ohlcv(ticker, "max", "1wk")
+    intraday_1d = _ohlcv(ticker, "1d", "5m")
+    intraday_5d = _ohlcv(ticker, "5d", "15m")
 
     closes = daily["c"]
     wcloses = weekly["c"] if weekly else []
@@ -190,8 +192,14 @@ def get_stock_detail(ticker: str, agents_view: dict | None = None) -> dict:
         "chg_1d": _ret(closes, 1),
         "fiftyTwoWeekHigh": meta.get("fiftyTwoWeekHigh"),
         "fiftyTwoWeekLow": meta.get("fiftyTwoWeekLow"),
-        "series": {"daily": {k: daily[k] for k in ("t", "o", "h", "l", "c", "v")},
-                   "weekly": ({k: weekly[k] for k in ("t", "o", "h", "l", "c", "v")} if weekly else None)},
+        "series": {
+            "intraday_1d": ({k: intraday_1d[k] for k in ("t", "o", "h", "l", "c", "v")}
+                            if intraday_1d else None),
+            "intraday_5d": ({k: intraday_5d[k] for k in ("t", "o", "h", "l", "c", "v")}
+                            if intraday_5d else None),
+            "daily": {k: daily[k] for k in ("t", "o", "h", "l", "c", "v")},
+            "weekly": ({k: weekly[k] for k in ("t", "o", "h", "l", "c", "v")} if weekly else None),
+        },
         "technicals": {
             "rsi14": _rsi(closes), "ret_1m": _ret(closes, 21), "ret_3m": _ret(closes, 63),
             "ret_1y": ((closes[-1] / closes[0] - 1) * 100) if len(closes) > 1 else None,

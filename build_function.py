@@ -31,7 +31,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from fastapi import FastAPI                                  # noqa: E402
+from fastapi import FastAPI, Request                         # noqa: E402
 from fastapi.responses import HTMLResponse, JSONResponse    # noqa: E402
 
 from app import store                                        # noqa: E402
@@ -84,6 +84,16 @@ def equity_history():
 @app.get("/api/news")
 def news():
     return store.read_json("news_feed") or {"reactions": [], "headlines": []}
+
+
+@app.post("/api/chat")
+async def chat(request: Request):
+    from app import chat as stock_chat
+    body = await request.json()
+    suggestions = store.read_json("suggestions") or {"suggestions": []}
+    agents_view = augment_agents_view(store.read_json("agents_view"))
+    news_feed = store.read_json("news_feed") or {"reactions": [], "headlines": []}
+    return stock_chat.answer(body.get("message", ""), suggestions, agents_view, news_feed)
 
 
 @app.post("/api/run-agent")
