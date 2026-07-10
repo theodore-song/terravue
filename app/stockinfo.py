@@ -120,6 +120,26 @@ def _ohlcv(ticker: str, rng: str, interval: str) -> dict | None:
     return None
 
 
+def get_live_prices(tickers: list[str]) -> dict[str, float]:
+    """Best-effort current prices from Yahoo's quote endpoint."""
+    tickers = sorted({t.upper().strip() for t in tickers if t})
+    out: dict[str, float] = {}
+    for i in range(0, len(tickers), 50):
+        chunk = tickers[i:i + 50]
+        url = ("https://query1.finance.yahoo.com/v7/finance/quote?symbols="
+               + urllib.parse.quote(",".join(chunk)))
+        try:
+            d = json.load(_get(url, timeout=8))
+            for q in d.get("quoteResponse", {}).get("result", []):
+                sym = q.get("symbol")
+                px = q.get("regularMarketPrice") or q.get("postMarketPrice") or q.get("preMarketPrice")
+                if sym and px is not None:
+                    out[sym.upper()] = float(px)
+        except Exception as exc:
+            print(f"[stockinfo] live quote batch failed: {exc}")
+    return out
+
+
 def get_fundamentals(ticker: str) -> dict:
     global _crumb
     modules = "assetProfile,summaryDetail,defaultKeyStatistics,financialData,price"

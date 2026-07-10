@@ -37,8 +37,17 @@ def get_suggestions(refresh: bool = False):
 
 
 @app.get("/api/agents")
-def get_agents():
-    return augment_agents_view(store.read_json("agents_view"))
+def get_agents(live: bool = False):
+    view = augment_agents_view(store.read_json("agents_view"))
+    if live:
+        from . import live as live_view, stockinfo
+        tickers = [
+            h["ticker"]
+            for a in view.get("agents", [])
+            for h in a.get("snapshot", {}).get("holdings", [])
+        ]
+        view = live_view.revalue_agents_view(view, stockinfo.get_live_prices(tickers))
+    return view
 
 
 @app.get("/api/stock/{ticker}")

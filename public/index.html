@@ -527,6 +527,8 @@ const ETF_SET = ['SPY','QQQ','DIA','IWM','VTI','XLK','XLF','XLE','XLV','XLY','SM
 let DATA = {sugg:null, port:null, hist:null};
 let charts = {};
 let filter = 'ALL';
+const LIVE_REFRESH_MS = 60000;
+let liveRefreshTimer = null, liveRefreshInFlight = false, STATUS = null;
 const tkr = t => `<span class="tkr" data-tkr="${t}">${t}</span>`;
 
 /* ---------- generic sortable table ---------- */
@@ -562,18 +564,59 @@ $$('#nav button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
 async function load(){
   try{
     const [sugg,agents,curves,status,news]=await Promise.all([
-      fetch('/api/suggestions').then(r=>r.json()),
-      fetch('/api/agents').then(r=>r.json()),
-      fetch('/api/equity-history').then(r=>r.json()),
-      fetch('/api/status').then(r=>r.json()),
-      fetch('/api/news').then(r=>r.json()).catch(()=>({reactions:[],headlines:[]})),
+      fetch('/api/suggestions?t='+Date.now()).then(r=>r.json()),
+      fetch('/api/agents?live=true&t='+Date.now()).then(r=>r.json()),
+      fetch('/api/equity-history?t='+Date.now()).then(r=>r.json()),
+      fetch('/api/status?t='+Date.now()).then(r=>r.json()),
+      fetch('/api/news?t='+Date.now()).then(r=>r.json()).catch(()=>({reactions:[],headlines:[]})),
     ]);
-    DATA={sugg,agents,curves,news};
+    DATA={sugg,agents,curves,news}; STATUS=status;
+    applyLiveCurvePoint();
     renderStatus(status);
-    renderStrip(); renderHome(status); renderOverview(); renderMarkets(); renderSuggestions(); renderSignals(); renderCompetition(); renderNews();
+    renderAll(status);
+    startLiveRefresh();
   }catch(e){
     renderLoadError(e);
   }
+}
+function renderAll(status=STATUS||{}){
+  renderStrip(); renderHome(status); renderOverview(); renderMarkets(); renderSuggestions(); renderSignals(); renderCompetition(); renderNews();
+}
+function startLiveRefresh(){
+  if(liveRefreshTimer)return;
+  liveRefreshTimer=setInterval(refreshLiveData,LIVE_REFRESH_MS);
+}
+async function refreshLiveData(){
+  if(liveRefreshInFlight || document.hidden || !DATA.sugg)return;
+  liveRefreshInFlight=true;
+  try{
+    const [sugg,agents,curves,news]=await Promise.all([
+      fetch('/api/suggestions?t='+Date.now()).then(r=>r.json()),
+      fetch('/api/agents?live=true&t='+Date.now()).then(r=>r.json()),
+      fetch('/api/equity-history?t='+Date.now()).then(r=>r.json()),
+      fetch('/api/news?t='+Date.now()).then(r=>r.json()).catch(()=>DATA.news||{reactions:[],headlines:[]}),
+    ]);
+    DATA={...DATA,sugg,agents,curves,news};
+    applyLiveCurvePoint();
+    renderStrip(); renderHome(STATUS||{}); renderOverview(); renderMarkets(); renderSuggestions();
+    if($('#tab-signals').classList.contains('active'))renderSignals();
+    renderCompetition(); renderNews();
+    refreshStockIntraday();
+  }catch(e){
+    console.warn('Live refresh failed', e);
+  }
+  liveRefreshInFlight=false;
+}
+function applyLiveCurvePoint(){
+  const agents=DATA.agents?.agents||[];
+  const curves=DATA.curves||{};
+  const today=new Date().toISOString().slice(0,10);
+  agents.forEach(a=>{
+    const arr=[...(curves[a.id]||[])].filter(p=>p.date!==today);
+    arr.push({date:today,equity:a.snapshot?.equity});
+    curves[a.id]=arr;
+  });
+  DATA.curves=curves;
 }
 
 function leader(){return (DATA.agents.leaderboard||[])[0]||null;}
@@ -805,8 +848,12 @@ function agentById(id){return (DATA.agents.agents||[]).find(a=>a.id===id);}
 
 function renderCompetition(){
   const lb=DATA.agents.leaderboard||[], agents=DATA.agents.agents||[];
-  $('#compSub').textContent=(DATA.agents.updated?'Updated '+new Date(DATA.agents.updated).toLocaleString()+' · ':'')+
+  const base=(DATA.agents.updated?'Updated '+new Date(DATA.agents.updated).toLocaleString()+' · ':'')+
     `${agents.length||10} AI agents compete with $100,000 paper portfolios.`;
+  const live=DATA.agents.live_updated
+    ? ` Live valuation ${new Date(DATA.agents.live_updated).toLocaleTimeString()} from ${DATA.agents.live_prices||0} quotes.`
+    : ' Live valuation refreshes every minute when quotes are available.';
+  $('#compSub').textContent=base+live;
   $('#leaderboard').innerHTML=lb.map((a,i)=>{
     const medal=['🥇','🥈','🥉'][i]||('#'+(i+1));
     return `<div class="card lbcard" style="border-top:3px solid ${a.color}">
