@@ -33,18 +33,34 @@ def augment_agents_view(view: dict | None) -> dict:
     defs = {a.id: a for a in AGENTS}
 
     for agent in agents:
-        if agent.get("strategy_note"):
-            continue
         adef = defs.get(agent.get("id"))
         if not adef:
             continue
         snapshot = agent.get("snapshot") or _empty_snapshot()
         cash_pct = snapshot.get("cash", 0) / max(snapshot.get("equity", 1), 1) * 100
-        agent["strategy_note"] = (
-            f"Daily strategy: run {adef.style.lower()} scoring, watch the other agents' "
-            f"same-day trades, copy only leading buys that pass this agent's filters, "
-            f"and keep about {cash_pct:.0f}% cash while risk is elevated."
-        )
+        if not agent.get("strategy_note"):
+            agent["strategy_note"] = (
+                f"Daily strategy: run {adef.style.lower()} scoring, watch the other agents' "
+                f"same-day trades, copy only leading buys that pass this agent's filters, "
+                f"and keep about {cash_pct:.0f}% cash while risk is elevated."
+            )
+        if not agent.get("movement_note"):
+            holdings = snapshot.get("holdings") or []
+            if holdings:
+                best = max(holdings, key=lambda h: h.get("unrealized_pct", 0))
+                worst = min(holdings, key=lambda h: h.get("unrealized_pct", 0))
+                agent["movement_note"] = (
+                    f"Daily movement note: this stored snapshot shows {best['ticker']} as "
+                    f"the strongest open position at {best.get('unrealized_pct', 0):+.1f}% "
+                    f"versus cost and {worst['ticker']} as the weakest at "
+                    f"{worst.get('unrealized_pct', 0):+.1f}%. Fresh up/down explanations "
+                    "will update after the next scheduled run."
+                )
+            else:
+                agent["movement_note"] = (
+                    "Daily movement note: no open positions yet, so this agent stayed mostly "
+                    "in cash while waiting for stronger setups."
+                )
 
     for adef in AGENTS:
         if adef.id in seen:
@@ -62,6 +78,10 @@ def augment_agents_view(view: dict | None) -> dict:
                 "Ready for the next scheduled run. This agent will publish a daily "
                 "competition strategy after it sees the current market signals and "
                 "the other agents' trades."
+            ),
+            "movement_note": (
+                "Daily movement note: no open positions yet, so there is nothing to "
+                "explain until this agent starts trading."
             ),
         })
 

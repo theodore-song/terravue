@@ -207,6 +207,13 @@
   .mini-row .name{font-weight:700}
   .mini-row .note{display:block;color:var(--muted);font-size:12px;margin-top:2px}
   .mini-row .score{font-weight:800;font-variant-numeric:tabular-nums}
+  .idea-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:16px}
+  .idea{background:rgba(19,29,39,.66);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px}
+  .idea-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+  .idea .tk{font-size:20px;font-weight:800}
+  .idea .why{font-size:13px;color:#cdd9e1;margin:10px 0 12px;line-height:1.55}
+  .factor-row{display:flex;gap:6px;flex-wrap:wrap}
+  .factor{font-size:11px;color:var(--muted);border:1px solid var(--border2);border-radius:999px;padding:3px 8px;background:rgba(9,13,19,.25)}
 
   /* ---- competition ---- */
   .lbcard{display:flex;flex-direction:column;gap:4px}
@@ -287,6 +294,7 @@
   <nav id="nav">
     <button data-tab="overview">Overview</button>
     <button data-tab="markets">Markets</button>
+    <button data-tab="suggestions">Suggestions</button>
     <button data-tab="signals">Signals</button>
     <button data-tab="competition">Competition</button>
   </nav>
@@ -309,6 +317,7 @@
         <p class="lede">A live paper-trading lab where AI agents screen US stocks, explain their signals, and compete in public portfolios you can inspect.</p>
         <div class="cta">
           <button class="btn lg" onclick="showTab('competition')">View leaderboard</button>
+          <button class="btn lg ghost" onclick="showTab('suggestions')">Long-term ideas</button>
           <button class="btn lg ghost" onclick="showTab('signals')">Explore signals</button>
         </div>
       </div>
@@ -330,6 +339,8 @@
         <h3>Competition</h3><p>Live leaderboard, equity-curve race, and each agent's holdings, allocation and trade log.</p></div>
       <div class="feat" onclick="showTab('overview')"><div class="ic" style="background:var(--steel)">◧</div>
         <h3>Overview</h3><p>The daily market read: index strip, breadth, signal mix, and the day's top movers.</p></div>
+      <div class="feat" onclick="showTab('suggestions')"><div class="ic" style="background:var(--sage)">◎</div>
+        <h3>Long-term suggestions</h3><p>Calmer trade ideas that blend momentum, earnings, news, profitability, growth and sales.</p></div>
       <div class="feat" onclick="showTab('signals')"><div class="ic" style="background:var(--lime1)">⌕</div>
         <h3>Signal screener</h3><p>All 1,000 names scored from trend, RSI, MACD and breakout. Search, filter and sort.</p></div>
     </div>
@@ -385,6 +396,16 @@
     </div>
   </section>
 
+  <!-- SUGGESTIONS -->
+  <section class="panel" id="tab-suggestions">
+    <h1 class="page-h">Long-term suggestions</h1>
+    <p class="page-sub">A steadier list outside the volatile Signals tab, ranked for 3-12 month ideas using momentum, earnings, news, profitability, growth and sales.</p>
+    <div class="narrative" style="margin-top:16px"><span class="tag">Longer-term read</span><div id="ltNarrative">Loading…</div></div>
+    <div class="idea-grid" id="ltCards"></div>
+    <h2 class="sec">Long-term idea table <span class="muted small" style="text-transform:none;letter-spacing:0;font-weight:400">— click a ticker for fundamentals</span></h2>
+    <div class="tablewrap"><table id="longTable"><thead></thead><tbody></tbody></table></div>
+  </section>
+
   <!-- SIGNALS -->
   <section class="panel" id="tab-signals">
     <h1 class="page-h">Signal screener</h1>
@@ -402,7 +423,7 @@
   <!-- COMPETITION -->
   <section class="panel" id="tab-competition">
     <h1 class="page-h">Agent competition</h1>
-    <p class="page-sub" id="compSub">Three AI agents, three strategies, one scoreboard. Each starts with $100,000.</p>
+    <p class="page-sub" id="compSub">Ten AI agents, multiple strategies, one scoreboard. Each starts with $100,000.</p>
 
     <h2 class="sec">Leaderboard</h2>
     <div class="grid" id="leaderboard" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr))"></div>
@@ -414,6 +435,7 @@
     <div class="toolbar" id="agentTabs"></div>
 
     <div class="narrative" id="agentStrategy" style="margin:0 0 18px"><span class="tag">Daily strategy</span><div id="agentStrategyText">Loading…</div></div>
+    <div class="narrative" id="agentMovement" style="margin:0 0 18px"><span class="tag">Daily movement</span><div id="agentMovementText">Loading…</div></div>
 
     <div class="grid cards4" id="agMetrics"></div>
 
@@ -505,7 +527,7 @@ async function load(){
     ]);
     DATA={sugg,agents,curves,news};
     renderStatus(status);
-    renderStrip(); renderHome(status); renderOverview(); renderMarkets(); renderSignals(); renderCompetition(); renderNews();
+    renderStrip(); renderHome(status); renderOverview(); renderMarkets(); renderSuggestions(); renderSignals(); renderCompetition(); renderNews();
   }catch(e){
     renderLoadError(e);
   }
@@ -623,6 +645,54 @@ function renderSignalList(sel,list){$(sel).innerHTML=list.map(s=>
   `<div class="mover"><span><span class="tk tkr" data-tkr="${s.ticker}">${s.ticker}</span><span class="pr">${money(s.price)}</span></span>
    <span><span class="pill ${s.action}">${s.action}</span> <span class="b ${cls(s.composite)}" style="margin-left:8px">${s.composite>=0?'+':''}${s.composite.toFixed(2)}</span></span></div>`).join('')||'<p class="empty">No data.</p>';}
 
+/* ---------- long-term suggestions ---------- */
+function longTermIdeas(){
+  if((DATA.sugg.long_term_suggestions||[]).length) return DATA.sugg.long_term_suggestions;
+  const newsBy={};
+  (DATA.news?.headlines||[]).forEach(h=>{if(h.ticker&&h.sentiment!=null)newsBy[h.ticker]=(newsBy[h.ticker]||0)+Number(h.sentiment);});
+  return [...(DATA.sugg.suggestions||[])].map(s=>{
+    const ind=s.indicators||{}, ret=ind.ret_1m||0, comp=s.composite||0, news=newsBy[s.ticker]||0;
+    const momentum=Math.max(-1,Math.min(1,ret/18));
+    const signal=Math.max(-1,Math.min(1,comp/1.6));
+    const newsScore=Math.max(-1,Math.min(1,news));
+    const score=(momentum*.45+signal*.40+newsScore*.15)*100;
+    const parts=[];
+    if(ret>=6)parts.push(`1-month momentum is strong at ${pct(ret)}`);
+    if(comp>=.7)parts.push(`technical signal is supportive (${comp>=0?'+':''}${comp.toFixed(2)})`);
+    if(news>.2)parts.push('recent news tone is positive');
+    return {ticker:s.ticker,price:s.price,score:Math.round(score*10)/10,confidence:Math.round(Math.max(0,Math.min(100,50+score/2))),
+      horizon:'3-12 months',call:score>=35?'Long-term buy':'Watchlist',
+      reason:(parts.join('; ')||'best available blend of momentum and signal strength')+'. Fundamentals will be folded in after the next daily detail refresh.',
+      factors:{momentum:Math.round(momentum*100),earnings:null,news:Math.round(newsScore*100),profitability:null,growth:null,sales:null}};
+  }).sort((a,b)=>b.score-a.score).slice(0,14);
+}
+function factorPills(f){
+  const labels=[['momentum','Momentum'],['earnings','Earnings'],['news','News'],['profitability','Profit'],['growth','Growth'],['sales','Sales']];
+  return labels.map(([k,l])=>`<span class="factor">${l}: ${f?.[k]==null?'pending':Number(f[k]).toFixed(0)}</span>`).join('');
+}
+function longCols(){return [
+  {key:'ticker',label:'Ticker',defaultDir:'asc',get:x=>x.ticker,cell:x=>`<td class="b">${tkr(x.ticker)}</td>`},
+  {key:'call',label:'Call',defaultDir:'asc',get:x=>x.call,cell:x=>`<td><span class="pill ${x.call==='Long-term buy'?'BUY':'HOLD'}">${x.call}</span></td>`},
+  {key:'score',label:'LT score',num:true,get:x=>x.score,cell:x=>`<td class="num ${cls(x.score)}">${x.score>=0?'+':''}${Number(x.score).toFixed(1)}</td>`},
+  {key:'conf',label:'Confidence',num:true,get:x=>x.confidence,cell:x=>`<td class="num">${fmt(x.confidence)}%</td>`},
+  {key:'price',label:'Price',num:true,get:x=>x.price,cell:x=>`<td class="num">${x.price!=null?money(x.price):'—'}</td>`},
+  {key:'horizon',label:'Horizon',defaultDir:'asc',get:x=>x.horizon,cell:x=>`<td>${x.horizon||'3-12 months'}</td>`},
+  {key:'why',label:'Why',defaultDir:'asc',get:x=>x.reason,cell:x=>`<td class="small muted">${x.reason}</td>`},
+];}
+function renderSuggestions(){
+  const ideas=longTermIdeas();
+  const top=ideas.slice(0,6);
+  $('#ltNarrative').textContent=ideas.length
+    ? 'These are not quick signal flips. They favor stocks where the available data lines up across momentum, quality, growth, sales, earnings and news tone. Use them as slower watchlist candidates, not guarantees.'
+    : 'No longer-term suggestions have been published yet.';
+  $('#ltCards').innerHTML=top.map(x=>`<div class="idea">
+    <div class="idea-top"><div><div class="tk">${tkr(x.ticker)}</div><div class="muted small">${x.horizon||'3-12 months'} · ${x.price!=null?money(x.price):'—'}</div></div>
+      <div style="text-align:right"><span class="pill ${x.call==='Long-term buy'?'BUY':'HOLD'}">${x.call}</span><div class="score ${cls(x.score)}" style="margin-top:6px;font-weight:800">${x.score>=0?'+':''}${Number(x.score).toFixed(1)}</div></div></div>
+    <div class="why">${x.reason}</div><div class="factor-row">${factorPills(x.factors)}</div>
+  </div>`).join('')||'<p class="empty">No long-term ideas yet.</p>';
+  initTable('longTable',longCols(),ideas,'score','No long-term suggestions.');
+}
+
 /* ---------- signals screener ---------- */
 function convictionBar(score){const w=Math.min(Math.abs(score)/2,1)*40;
   const c=score>=0?'var(--up)':'var(--down)';
@@ -658,7 +728,8 @@ function agentById(id){return (DATA.agents.agents||[]).find(a=>a.id===id);}
 
 function renderCompetition(){
   const lb=DATA.agents.leaderboard||[], agents=DATA.agents.agents||[];
-  if(DATA.agents.updated)$('#compSub').textContent='Updated '+new Date(DATA.agents.updated).toLocaleString()+' · each agent started with $100,000.';
+  $('#compSub').textContent=(DATA.agents.updated?'Updated '+new Date(DATA.agents.updated).toLocaleString()+' · ':'')+
+    `${agents.length||10} AI agents compete with $100,000 paper portfolios.`;
   $('#leaderboard').innerHTML=lb.map((a,i)=>{
     const medal=['🥇','🥈','🥉'][i]||('#'+(i+1));
     return `<div class="card lbcard" style="border-top:3px solid ${a.color}">
@@ -717,6 +788,7 @@ function renderAgentDetail(){
   const a=agentById(selectedAgent); if(!a){return;}
   const s=a.snapshot,tot=s.total_return_pct;
   $('#agentStrategyText').textContent=a.strategy_note||'This agent will publish its daily competition strategy after the next scheduled run.';
+  $('#agentMovementText').textContent=a.movement_note||'This agent will explain which positions helped or hurt after the next scheduled run.';
   $('#agMetrics').innerHTML=
     metric('Equity',money(s.equity),pct(tot),cls(tot))+
     metric('Return',pct(tot),'vs '+money0(s.starting_cash)+' start',cls(tot))+

@@ -114,6 +114,51 @@ def _daily_strategy_note(adef: AgentDef, snapshot: dict, actions: list[str],
     )
 
 
+def _daily_movement_note(adef: AgentDef, snapshot: dict, suggestions: dict,
+                         actions: list[str]) -> str:
+    holdings = snapshot.get("holdings") or []
+    if not holdings:
+        return (
+            "No position movement yet because this agent is mostly in cash. "
+            "It is waiting for cleaner setups before putting more capital at risk."
+        )
+    by_ticker = {s["ticker"]: s for s in suggestions.get("suggestions", [])}
+    rows = []
+    for h in holdings:
+        s = by_ticker.get(h["ticker"], {})
+        chg = (s.get("indicators", {}) or {}).get("chg_1d")
+        if chg is None:
+            continue
+        weight = h.get("weight", 0.0) or 0.0
+        contribution = weight * chg / 100.0
+        rows.append((contribution, chg, h["ticker"], h.get("unrealized_pct", 0.0)))
+
+    if not rows:
+        return (
+            "Daily price movement is unavailable for the current holdings, so this "
+            "agent is using risk limits, cash level, and recent trade checks until "
+            "fresh market data arrives."
+        )
+
+    rows.sort(key=lambda x: x[0], reverse=True)
+    best = rows[0]
+    worst = rows[-1]
+    net = sum(r[0] for r in rows)
+    tone = "rose" if net >= 0 else "fell"
+    reason = (
+        f"{adef.name}'s positions likely {tone} about {net:+.2f}% today from holdings. "
+        f"Biggest help: {best[2]} moved {best[1]:+.2f}% and is {best[3]:+.1f}% versus cost. "
+    )
+    if worst[2] != best[2]:
+        reason += (
+            f"Biggest drag: {worst[2]} moved {worst[1]:+.2f}% and is "
+            f"{worst[3]:+.1f}% versus cost. "
+        )
+    if actions:
+        reason += "Today it responded with: " + "; ".join(actions[:2])
+    return reason
+
+
 def _sync_to_leader(adef: AgentDef, suggestions: dict, leader: AgentDef | None) -> dict:
     portfolio = Portfolio.load(adef.id)
     actions: list[str] = []
@@ -439,6 +484,9 @@ def run_competition(suggestions: dict) -> dict:
             adef, agent["snapshot"], agent["actions"],
             ranks.get(agent["id"]), leader_name,
         )
+        agent["movement_note"] = _daily_movement_note(
+            adef, agent["snapshot"], suggestions, agent["actions"],
+        )
 
     view = {
         "updated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -478,6 +526,12 @@ def _publish_view(prices):
         agent["strategy_note"] = _daily_strategy_note(
             adef, agent["snapshot"], agent["actions"],
             ranks.get(agent["id"]), leader_name,
+        )
+        agent["movement_note"] = _daily_movement_note(
+            adef, agent["snapshot"], {"suggestions": [
+                {"ticker": t, "price": p, "indicators": {"chg_1d": 0.0}}
+                for t, p in prices.items()
+            ]}, agent["actions"],
         )
     view = {"updated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "agents": agents_out, "leaderboard": leaderboard}

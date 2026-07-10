@@ -24,6 +24,7 @@ def main() -> None:
     print("\nBuilding per-stock detail pages...")
     try:
         details.build_and_store(suggestions, view)
+        suggestions = advisor.refresh_long_term_suggestions(suggestions)
     except Exception as exc:
         print(f"  detail build failed (non-fatal): {exc}")
 
