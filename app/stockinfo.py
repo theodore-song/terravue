@@ -225,6 +225,25 @@ def get_live_prices(tickers: list[str]) -> dict[str, float]:
     return out
 
 
+def get_intraday_series(ticker: str) -> dict:
+    ticker = ticker.upper().strip()
+    intraday_1d = (_ohlcv(ticker, "1d", "1m") or _spark_ohlcv(ticker, "1d", "1m")
+                   or _nasdaq_intraday(ticker, "1d")
+                   or _ohlcv(ticker, "1d", "5m") or _spark_ohlcv(ticker, "1d", "5m"))
+    intraday_5d = (_ohlcv(ticker, "5d", "15m") or _spark_ohlcv(ticker, "5d", "15m")
+                   or _nasdaq_intraday(ticker, "5d"))
+    price = None
+    if intraday_1d and intraday_1d.get("c"):
+        price = intraday_1d["c"][-1]
+    elif intraday_5d and intraday_5d.get("c"):
+        price = intraday_5d["c"][-1]
+    return {
+        "ticker": ticker,
+        "price": price,
+        "series": {"intraday_1d": intraday_1d, "intraday_5d": intraday_5d},
+    }
+
+
 def get_fundamentals(ticker: str) -> dict:
     global _crumb
     modules = "assetProfile,summaryDetail,defaultKeyStatistics,financialData,price"

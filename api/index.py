@@ -62,11 +62,15 @@ def stock(ticker: str, intraday: bool = False):
     av = store.read_json("agents_view")
     pre = store.read_json("sd:" + ticker.upper().strip())
     if pre:
-        if intraday or not (pre.get("series") or {}).get("intraday_1d"):
-            live = stockinfo.get_stock_detail(ticker, av, force_intraday=intraday)
-            for key in ("intraday_1d", "intraday_5d"):
-                if (live.get("series") or {}).get(key):
-                    pre.setdefault("series", {})[key] = live["series"][key]
+        if intraday:
+            live = stockinfo.get_intraday_series(ticker)
+        elif not (pre.get("series") or {}).get("intraday_1d"):
+            live = stockinfo.get_stock_detail(ticker, av)
+        else:
+            live = {}
+        for key in ("intraday_1d", "intraday_5d"):
+            if (live.get("series") or {}).get(key):
+                pre.setdefault("series", {})[key] = live["series"][key]
             for key in ("price", "chg_1d"):
                 if live.get(key) is not None:
                     pre[key] = live[key]
