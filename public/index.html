@@ -1079,7 +1079,11 @@ async function refreshStockIntraday(){
     if(d&&!d.error){
       skData={...skData,...d,series:{...(skData?.series||{}),...(d.series||{})}};
       drawSkCharts();
-      updateLiveNote('Short-range chart refreshed '+new Date().toLocaleTimeString()+'. Next update in about 1 minute.');
+      if(hasCurrentIntraday()){
+        updateLiveNote('Short-range chart refreshed '+new Date().toLocaleTimeString()+'. Next update in about 1 minute.');
+      }else{
+        updateLiveNote('Short-range refresh is trying every minute, but live intraday bars are temporarily unavailable from the data provider.');
+      }
     }else updateLiveNote('Short-range refresh skipped; live chart data is temporarily unavailable.');
   }catch(e){
     updateLiveNote('Short-range refresh failed; trying again in about 1 minute.');
@@ -1099,6 +1103,12 @@ function stockSeriesForRange(){
   const ser=useWeekly?series.weekly:series.daily;
   const counts={'1H':2,'1D':2,'5D':5,'1M':22,'6M':126,'1Y':252,'3Y':156,'5Y':260,'10Y':520,'All':99999};
   return {ser,count:counts[skRange]||252,unit:useWeekly?'year':(counts[skRange]<=22?'day':'month'),intraday:false};
+}
+function hasCurrentIntraday(){
+  const s=skData?.series||{};
+  if(skRange==='1H'||skRange==='1D')return !!s.intraday_1d;
+  if(skRange==='5D')return !!s.intraday_5d;
+  return true;
 }
 
 function drawSkCharts(){
