@@ -1,6 +1,10 @@
 .venv/
+.uv-build/
+.vercel/
 __pycache__/
 *.pyc
+pyproject.toml
+uv.lock
 data/
 requirements-local.txt
 run_daily.py
