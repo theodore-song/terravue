@@ -156,6 +156,42 @@ def _spark_ohlcv(ticker: str, rng: str, interval: str) -> dict | None:
         return None
 
 
+def _nasdaq_intraday(ticker: str, timeframe: str = "1d") -> dict | None:
+    """Fallback minute chart from Nasdaq's public quote API."""
+    symbol = ticker.upper().replace(".", "-")
+    url = (f"https://api.nasdaq.com/api/quote/{urllib.parse.quote(symbol)}/chart"
+           f"?assetclass=stocks&timeframe={urllib.parse.quote(timeframe)}")
+    req = urllib.request.Request(url, headers={
+        **_UA,
+        "Accept": "application/json",
+        "Origin": "https://www.nasdaq.com",
+        "Referer": "https://www.nasdaq.com/",
+    })
+    try:
+        with _OPENER.open(req, timeout=12) as resp:
+            d = json.loads(resp.read().decode())
+        chart = ((d.get("data") or {}).get("chart") or [])
+        t2, o2, h2, l2, c2, v2 = [], [], [], [], [], []
+        for p in chart:
+            x = p.get("x")
+            y = p.get("y")
+            if x is None or y is None:
+                continue
+            price = float(y)
+            t2.append(int(float(x) / 1000))
+            o2.append(round(price, 4))
+            h2.append(round(price, 4))
+            l2.append(round(price, 4))
+            c2.append(round(price, 4))
+            v2.append(0)
+        if not t2:
+            return None
+        return {"meta": {"symbol": ticker, "source": "nasdaq"}, "t": t2, "o": o2, "h": h2, "l": l2, "c": c2, "v": v2}
+    except Exception as exc:
+        print(f"[stockinfo] nasdaq {ticker} {timeframe}: {exc}")
+        return None
+
+
 def get_live_prices(tickers: list[str]) -> dict[str, float]:
     """Best-effort current prices from Yahoo's quote endpoint."""
     tickers = sorted({t.upper().strip() for t in tickers if t})
@@ -176,8 +212,10 @@ def get_live_prices(tickers: list[str]) -> dict[str, float]:
     missing = [t for t in tickers if t not in out]
     for ticker in missing[:80]:
         chart = (_ohlcv(ticker, "1d", "1m") or _spark_ohlcv(ticker, "1d", "1m")
+                 or _nasdaq_intraday(ticker, "1d")
                  or _ohlcv(ticker, "1d", "5m") or _spark_ohlcv(ticker, "1d", "5m")
-                 or _ohlcv(ticker, "5d", "15m") or _spark_ohlcv(ticker, "5d", "15m"))
+                 or _ohlcv(ticker, "5d", "15m") or _spark_ohlcv(ticker, "5d", "15m")
+                 or _nasdaq_intraday(ticker, "5d"))
         try:
             if chart and chart.get("c"):
                 out[ticker] = float(chart["c"][-1])
@@ -235,8 +273,10 @@ def get_stock_detail(ticker: str, agents_view: dict | None = None,
                 "error": "Live data is temporarily unavailable (rate limited). Try again shortly."}
     weekly = _ohlcv(ticker, "max", "1wk")
     intraday_1d = (_ohlcv(ticker, "1d", "1m") or _spark_ohlcv(ticker, "1d", "1m")
+                   or _nasdaq_intraday(ticker, "1d")
                    or _ohlcv(ticker, "1d", "5m") or _spark_ohlcv(ticker, "1d", "5m"))
-    intraday_5d = _ohlcv(ticker, "5d", "15m") or _spark_ohlcv(ticker, "5d", "15m")
+    intraday_5d = (_ohlcv(ticker, "5d", "15m") or _spark_ohlcv(ticker, "5d", "15m")
+                   or _nasdaq_intraday(ticker, "5d"))
 
     closes = daily["c"]
     wcloses = weekly["c"] if weekly else []
