@@ -96,6 +96,7 @@ def _volatility(xs, window=30):
 
 def _ohlcv(ticker: str, rng: str, interval: str) -> dict | None:
     """Return an OHLCV series {t,o,h,l,c,v} (+ meta) from Yahoo's v8 chart."""
+    _crumb_token()  # seeds Yahoo cookies; chart endpoint often needs this on serverless IPs
     for host in ("query1", "query2"):
         url = (f"https://{host}.finance.yahoo.com/v8/finance/chart/"
                f"{urllib.parse.quote(ticker)}?range={rng}&interval={interval}")
