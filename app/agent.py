@@ -22,6 +22,7 @@ DRAWDOWN_CASH_RESERVE_PCT = 0.45
 STOP_LOSS_PCT = -4.5
 WEAK_GAIN_EXIT_PCT = 6.0
 MIN_BUY_COMPOSITE = 0.7
+MIN_STARTER_COMPOSITE = 0.25
 MAX_NORMAL_POSITION_PCT = 0.10
 MAX_DRAWDOWN_POSITION_PCT = 0.06
 PEER_COPY_MAX_TRADES = 3
@@ -77,6 +78,99 @@ def _is_buyable(adef: AgentDef, s: dict, score: float) -> bool:
     if s.get("ticker") in adef.focus_tickers:
         return trend > 0.25 and macd > 0
     return trend > 0.4 and (macd > 0.25 or breakout > 0.75)
+
+
+def _is_starter_buyable(adef: AgentDef, s: dict, score: float) -> bool:
+    """Softer gate used only to seed a brand-new empty agent portfolio."""
+    indicators = s.get("indicators", {})
+    composite = s.get("composite", 0.0) or 0.0
+    ret_1m = indicators.get("ret_1m", 0.0) or 0.0
+    chg_1d = indicators.get("chg_1d", 0.0) or 0.0
+    volatility = indicators.get("volatility", 0.3) or 0.3
+    trend = _signal_score(s, "Trend (MA cross)")
+    macd = _signal_score(s, "MACD")
+    breakout = _signal_score(s, "Breakout (52w channel)")
+    rsi = _signal_score(s, "Momentum (RSI)")
+    threshold = max(adef.buy_threshold * 0.55, 0.35)
+
+    if score < threshold or composite < MIN_STARTER_COMPOSITE:
+        return False
+    if chg_1d < -2.5 or volatility > 1.2:
+        return False
+    if s.get("ticker") in adef.focus_tickers:
+        return ret_1m > -8 and (trend > -0.25 or macd > -0.25 or breakout > 0.35)
+    if adef.id == "sage":
+        return ret_1m > -10 and (rsi > 0.15 or macd > -0.15) and trend > -0.45
+    return ret_1m > -8 and trend > -0.3 and macd > -0.35
+
+
+def _starter_basket(adef: AgentDef, portfolio: Portfolio, suggestions: dict,
+                    actions: list[str]) -> None:
+    """Open a small, diversified starter basket when an agent has no holdings."""
+    if portfolio.positions:
+        return
+
+    sugg = suggestions.get("suggestions", [])
+    prices = {s["ticker"]: s["price"] for s in sugg}
+    equity = portfolio.equity(prices)
+    portfolio_return_pct = (equity / STARTING_CASH - 1) * 100
+    reserve = max(portfolio.cash - equity * _cash_reserve_pct(portfolio_return_pct), 0)
+    if reserve <= 0:
+        return
+
+    candidates = [
+        (adef.score(s), s)
+        for s in sugg
+        if _is_starter_buyable(adef, s, adef.score(s))
+    ]
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    max_starters = min(5, adef.max_positions)
+    starter_cap = min(_position_cap(adef, portfolio_return_pct) * 0.55, 0.04)
+
+    for score, s in candidates[:max_starters]:
+        ticker, price = s["ticker"], s["price"]
+        if ticker in portfolio.positions:
+            continue
+        spend = min(equity * starter_cap, reserve)
+        if spend < max(price, equity * 0.0075):
+            continue
+        if portfolio.buy(ticker, spend / price, price,
+                         f"{adef.name}: starter basket {score:+.2f}"):
+            actions.append(f"BOUGHT {spend / price:.2f} {ticker} @ ${price:.2f} (starter basket)")
+            reserve -= spend
+
+
+def _fallback_long_term_ideas(suggestions: dict) -> list[dict]:
+    ideas = suggestions.get("long_term_suggestions") or []
+    if ideas:
+        return ideas
+
+    fallback: list[dict] = []
+    for s in suggestions.get("suggestions", []):
+        indicators = s.get("indicators", {}) or {}
+        composite = s.get("composite", 0.0) or 0.0
+        ret_1m = indicators.get("ret_1m", 0.0) or 0.0
+        chg_1d = indicators.get("chg_1d", 0.0) or 0.0
+        volatility = indicators.get("volatility", 0.3) or 0.3
+        trend = _signal_score(s, "Trend (MA cross)")
+        macd = _signal_score(s, "MACD")
+        quality_score = composite * 55 + ret_1m * 0.9 + chg_1d * 0.35
+        quality_score += max(trend, 0) * 9 + max(macd, 0) * 6
+        quality_score -= max(volatility - 0.45, 0) * 18
+        if composite < 0.35 or ret_1m < -6 or chg_1d < -2.5 or volatility > 1.05:
+            continue
+        fallback.append({
+            "ticker": s.get("ticker"),
+            "price": s.get("price"),
+            "score": round(quality_score, 2),
+            "confidence": round(max(45, min(90, 54 + quality_score / 2.2))),
+            "reason": (
+                "Fallback long-term idea from current momentum, trend, volatility, "
+                "and blended signal strength."
+            ),
+        })
+    fallback.sort(key=lambda x: (x["confidence"], x["score"]), reverse=True)
+    return fallback[:18]
 
 
 def _signal_score(s: dict, name: str) -> float:
@@ -320,7 +414,7 @@ def _run_long_term_cycle(adef: AgentDef, suggestions: dict) -> dict:
     actions: list[str] = []
     sugg = suggestions.get("suggestions", [])
     prices = {s["ticker"]: s["price"] for s in sugg}
-    ideas = suggestions.get("long_term_suggestions") or []
+    ideas = _fallback_long_term_ideas(suggestions)
     ideas = [x for x in ideas if x.get("ticker") in prices]
     ideas.sort(key=lambda x: (x.get("confidence") or 0, x.get("score") or 0), reverse=True)
     target = ideas[:adef.max_positions]
@@ -476,6 +570,8 @@ def run_cycle(adef: AgentDef, suggestions: dict,
         if portfolio.buy(ticker, shares, price,
                          f"{adef.name}: conviction {sc:+.2f}"):
             actions.append(f"BOUGHT {shares:.2f} {ticker} @ ${price:.2f} ({sc:+.2f})")
+
+    _starter_basket(adef, portfolio, suggestions, actions)
 
     if not actions:
         actions.append("No trades — holdings already aligned with signals.")
