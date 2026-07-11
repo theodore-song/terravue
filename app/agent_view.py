@@ -39,11 +39,17 @@ def augment_agents_view(view: dict | None) -> dict:
         snapshot = agent.get("snapshot") or _empty_snapshot()
         cash_pct = snapshot.get("cash", 0) / max(snapshot.get("equity", 1), 1) * 100
         if not agent.get("strategy_note"):
-            agent["strategy_note"] = (
-                f"Daily strategy: run {adef.style.lower()} scoring, watch the other agents' "
-                f"same-day trades, copy only leading buys that pass this agent's filters, "
-                f"and keep about {cash_pct:.0f}% cash while risk is elevated."
-            )
+            if adef.long_term_suggestions:
+                agent["strategy_note"] = (
+                    "Daily strategy: hold the highest-confidence long-term suggestions "
+                    f"as a benchmark basket, rebalance slowly, and keep about {cash_pct:.0f}% cash."
+                )
+            else:
+                agent["strategy_note"] = (
+                    f"Daily strategy: run {adef.style.lower()} scoring, watch the other agents' "
+                    f"same-day trades, copy only leading buys that pass this agent's filters, "
+                    f"and keep about {cash_pct:.0f}% cash while risk is elevated."
+                )
         if not agent.get("movement_note"):
             holdings = snapshot.get("holdings") or []
             if holdings:
@@ -75,6 +81,9 @@ def augment_agents_view(view: dict | None) -> dict:
             "recent_trades": [],
             "actions": ["Ready — will start trading on the next scheduled run."],
             "strategy_note": (
+                "Ready for the next scheduled run. This agent will hold the long-term "
+                "suggestion basket as a benchmark."
+                if adef.long_term_suggestions else
                 "Ready for the next scheduled run. This agent will publish a daily "
                 "competition strategy after it sees the current market signals and "
                 "the other agents' trades."

@@ -101,6 +101,12 @@ def _daily_strategy_note(adef: AgentDef, snapshot: dict, actions: list[str],
             f"technically weak positions. Keep about {cash_pct:.0f}% cash until the "
             "leader's book proves it is working."
         )
+    if adef.long_term_suggestions:
+        return (
+            f"{prefix}Long-term comparison mode: hold the highest-confidence 3-12 month "
+            f"suggestions, rebalance slowly, cap each position, and keep about "
+            f"{cash_pct:.0f}% cash as a cushion."
+        )
     if snapshot["total_return_pct"] < -2:
         posture = "capital-defense mode"
     elif cash_pct > 30:
@@ -308,6 +314,69 @@ def _copy_peer_trades(adef: AgentDef, suggestions: dict, peers: list[dict]) -> d
     }
 
 
+def _run_long_term_cycle(adef: AgentDef, suggestions: dict) -> dict:
+    """Buy and hold the published long-term suggestions for comparison."""
+    portfolio = Portfolio.load(adef.id)
+    actions: list[str] = []
+    sugg = suggestions.get("suggestions", [])
+    prices = {s["ticker"]: s["price"] for s in sugg}
+    ideas = suggestions.get("long_term_suggestions") or []
+    ideas = [x for x in ideas if x.get("ticker") in prices]
+    ideas.sort(key=lambda x: (x.get("confidence") or 0, x.get("score") or 0), reverse=True)
+    target = ideas[:adef.max_positions]
+    target_tickers = {x["ticker"] for x in target}
+
+    # Exit names that are no longer in the long-term basket.
+    for ticker in list(portfolio.positions.keys()):
+        if ticker not in target_tickers:
+            price = prices.get(ticker, portfolio.positions[ticker].avg_cost)
+            shares = portfolio.positions[ticker].shares
+            if portfolio.sell(ticker, shares, price, f"{adef.name}: removed from long-term suggestions"):
+                actions.append(f"SOLD {shares:.2f} {ticker} @ ${price:.2f} (left long-term list)")
+
+    equity = portfolio.equity(prices)
+    reserve = max(portfolio.cash - equity * SMART_CASH_RESERVE_PCT, 0)
+    if target:
+        total_conf = sum(max(float(x.get("confidence") or 50), 1.0) for x in target)
+    else:
+        total_conf = 0.0
+
+    for idea in target:
+        ticker = idea["ticker"]
+        price = prices[ticker]
+        conf = max(float(idea.get("confidence") or 50), 1.0)
+        target_weight = min(adef.max_position_pct, conf / max(total_conf, 1.0) * 0.78)
+        current_val = (portfolio.positions[ticker].market_value(price)
+                       if ticker in portfolio.positions else 0.0)
+        target_val = target_weight * equity
+        if current_val > target_val * 1.2 and ticker in portfolio.positions:
+            shares = (current_val - target_val) / price
+            if portfolio.sell(ticker, shares, price, f"{adef.name}: trim long-term weight"):
+                actions.append(f"TRIMMED {shares:.2f} {ticker} @ ${price:.2f} (long-term weight)")
+                reserve += shares * price
+            continue
+        spend = min(max(target_val - current_val, 0.0), reserve)
+        if spend < max(price, equity * 0.0075):
+            continue
+        if portfolio.buy(ticker, spend / price, price,
+                         f"{adef.name}: long-term suggestion {idea.get('confidence', '—')}% confidence"):
+            actions.append(f"BOUGHT {spend / price:.2f} {ticker} @ ${price:.2f} (long-term suggestion)")
+            reserve -= spend
+
+    if not actions:
+        actions.append("No trades — long-term basket already aligned.")
+
+    curve = portfolio.record_equity(prices)
+    portfolio.save()
+    return {
+        "id": adef.id,
+        "actions": actions,
+        "snapshot": portfolio.snapshot(prices),
+        "recent_trades": portfolio.recent_trades(),
+        "curve": curve,
+    }
+
+
 def run_cycle(adef: AgentDef, suggestions: dict,
               portfolio: Portfolio | None = None) -> dict:
     """Run one trading cycle for a single agent. Returns a log + snapshot."""
@@ -428,7 +497,8 @@ def run_competition(suggestions: dict) -> dict:
     agents_out = []
     curves: dict[str, list] = {}
     for adef in [a for a in AGENTS if not a.copy_leader]:
-        log = run_cycle(adef, suggestions)
+        log = (_run_long_term_cycle(adef, suggestions)
+               if adef.long_term_suggestions else run_cycle(adef, suggestions))
         curves[adef.id] = log["curve"]
         agents_out.append({
             "id": adef.id, "name": adef.name, "style": adef.style,
@@ -442,6 +512,9 @@ def run_competition(suggestions: dict) -> dict:
     refreshed = []
     for agent_out in agents_out:
         adef = next(a for a in AGENTS if a.id == agent_out["id"])
+        if adef.long_term_suggestions:
+            refreshed.append(agent_out)
+            continue
         log = _copy_peer_trades(adef, suggestions, agents_out)
         curves[adef.id] = log["curve"]
         agent_out = {

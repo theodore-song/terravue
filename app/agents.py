@@ -36,6 +36,7 @@ class AgentDef:
     scorer: Callable[[dict], float]
     focus_tickers: tuple[str, ...] = field(default_factory=tuple)
     copy_leader: bool = False
+    long_term_suggestions: bool = False
 
     def score(self, s: dict) -> float:
         return self.scorer(s)
@@ -144,6 +145,11 @@ def _echo(s: dict) -> float:
     return s.get("composite", 0.0)
 
 
+def _longview(s: dict) -> float:
+    # Actual selection is handled from suggestions["long_term_suggestions"].
+    return s.get("composite", 0.0)
+
+
 AGENTS: list[AgentDef] = [
     AgentDef("apex", "Apex", "Momentum",
              "Buys only confirmed uptrends and cuts failed momentum quickly.",
@@ -175,6 +181,9 @@ AGENTS: list[AgentDef] = [
     AgentDef("duquesne", "Duquesne Bot", "Macro momentum",
              "Tracks a Druckenmiller-like macro momentum basket across tech, cyclicals and sector ETFs.",
              "#6A2C70", 0.08, 10, 1.1, -0.2, _duquesne, DUQUESNE_BOOK),
+    AgentDef("longview", "LongView", "Long-term suggestions",
+             "Holds the slower 3-12 month suggestion basket so it can be compared against the trading agents.",
+             "#A78BFA", 0.08, 14, 0.0, -99.0, _longview, long_term_suggestions=True),
 ]
 
 

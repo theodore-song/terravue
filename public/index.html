@@ -466,7 +466,7 @@
   <!-- COMPETITION -->
   <section class="panel" id="tab-competition">
     <h1 class="page-h">Agent competition</h1>
-    <p class="page-sub" id="compSub">Ten AI agents, multiple strategies, one scoreboard. Each starts with $100,000.</p>
+    <p class="page-sub" id="compSub">AI agents, multiple strategies, one scoreboard. Each starts with $100,000.</p>
 
     <h2 class="sec">Leaderboard</h2>
     <div class="grid" id="leaderboard" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr))"></div>
@@ -855,7 +855,7 @@ function agentById(id){return (DATA.agents.agents||[]).find(a=>a.id===id);}
 function renderCompetition(){
   const lb=DATA.agents.leaderboard||[], agents=DATA.agents.agents||[];
   const base=(DATA.agents.updated?'Updated '+new Date(DATA.agents.updated).toLocaleString()+' · ':'')+
-    `${agents.length||10} AI agents compete with $100,000 paper portfolios.`;
+    `${agents.length||11} AI agents compete with $100,000 paper portfolios.`;
   const live=DATA.agents.live_updated
     ? ` Live valuation ${new Date(DATA.agents.live_updated).toLocaleTimeString()} from ${DATA.agents.live_prices||0} quotes.`
     : ' Live valuation refreshes every minute when quotes are available.';
