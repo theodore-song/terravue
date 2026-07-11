@@ -173,18 +173,23 @@ def _nasdaq_intraday(ticker: str, timeframe: str = "1d") -> dict | None:
             d = json.loads(resp.read().decode())
         chart = ((d.get("data") or {}).get("chart") or [])
         t2, o2, h2, l2, c2, v2 = [], [], [], [], [], []
+        prev_close = None
         for p in chart:
             x = p.get("x")
             y = p.get("y")
             if x is None or y is None:
                 continue
             price = float(y)
+            opn = prev_close if prev_close is not None else price
+            high = max(opn, price)
+            low = min(opn, price)
             t2.append(int(float(x) / 1000))
-            o2.append(round(price, 4))
-            h2.append(round(price, 4))
-            l2.append(round(price, 4))
+            o2.append(round(opn, 4))
+            h2.append(round(high, 4))
+            l2.append(round(low, 4))
             c2.append(round(price, 4))
             v2.append(0)
+            prev_close = price
         if not t2:
             return None
         return {"meta": {"symbol": ticker, "source": "nasdaq"}, "t": t2, "o": o2, "h": h2, "l": l2, "c": c2, "v": v2}
