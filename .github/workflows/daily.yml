@@ -1,12 +1,12 @@
-name: Daily agent run
+name: Hourly agent run
 
-# Runs the 5-agent competition over the top-1000 universe and publishes the
-# results to the cloud KV store (which the live Vercel site reads).
+# Runs the agent competition over the stock universe and publishes the results
+# to the cloud KV store (which the live Vercel site reads).
 on:
   schedule:
-    # 21:30 UTC = 5:30pm EDT / 4:30pm EST — weekdays, just after the US close.
-    # (GitHub cron is UTC and does not adjust for daylight saving.)
-    - cron: "30 21 * * 1-5"
+    # Hourly on weekdays. GitHub cron is UTC; the site also auto-pulls these
+    # updates every hour while it is open.
+    - cron: "0 * * * 1-5"
   workflow_dispatch: {}   # allows manual "Run workflow" from the Actions tab
 
 jobs:
@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements-local.txt
 
-      - name: Run daily competition and publish to KV
+      - name: Run hourly competition and publish to KV
         env:
           KV_REST_API_URL: ${{ secrets.KV_REST_API_URL }}
           KV_REST_API_TOKEN: ${{ secrets.KV_REST_API_TOKEN }}

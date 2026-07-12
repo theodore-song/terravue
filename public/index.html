@@ -71,6 +71,7 @@
   .topbar .right{display:flex;align-items:center;gap:12px}
   .badge{font-size:11px;padding:4px 10px;border-radius:999px;border:1px solid var(--border2);color:var(--muted)}
   .badge.on{color:var(--lime2);border-color:rgba(226,248,156,.4);background:var(--up-soft)}
+  .badge.live{color:var(--steel);max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .btn{background:var(--blue);color:#fff;border:none;border-radius:9px;padding:9px 16px;
     font-size:14px;font-weight:600;cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:7px}
   .btn:hover{filter:brightness(1.1)}
@@ -317,6 +318,7 @@
   </nav>
   <div class="right">
     <span id="llmBadge" class="badge">AI: …</span>
+    <span id="refreshBadge" class="badge live">Refresh: …</span>
     <button class="btn" id="runBtn" onclick="runAgent()">Run agent</button>
   </div>
 </div>
@@ -528,7 +530,10 @@ let DATA = {sugg:null, port:null, hist:null};
 let charts = {};
 let filter = 'ALL';
 const LIVE_REFRESH_MS = 60000;
-let liveRefreshTimer = null, liveRefreshInFlight = false, STATUS = null;
+const FULL_REFRESH_MS = 60 * 60 * 1000;
+let liveRefreshTimer = null, fullRefreshTimer = null, refreshBadgeTimer = null;
+let liveRefreshInFlight = false, fullRefreshInFlight = false, STATUS = null;
+let lastFullRefreshAt = null, nextFullRefreshAt = null;
 const tkr = t => `<span class="tkr" data-tkr="${t}">${t}</span>`;
 
 /* ---------- generic sortable table ---------- */
@@ -561,7 +566,7 @@ function showTab(name){
 $$('#nav button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
 
 /* ---------- load ---------- */
-async function load(){
+async function load(opts={}){
   try{
     const [sugg,agents,curves,status,news]=await Promise.all([
       fetch('/api/suggestions?t='+Date.now()).then(r=>r.json()),
@@ -575,8 +580,11 @@ async function load(){
     renderStatus(status);
     renderAll(status);
     startLiveRefresh();
+    startFullRefresh();
+    markFullRefresh();
   }catch(e){
     renderLoadError(e);
+    if(opts.throwOnError)throw e;
   }
 }
 function renderAll(status=STATUS||{}){
@@ -586,6 +594,41 @@ function activeTab(){return ($$('#nav button').find(b=>b.classList.contains('act
 function startLiveRefresh(){
   if(liveRefreshTimer)return;
   liveRefreshTimer=setInterval(refreshLiveData,LIVE_REFRESH_MS);
+}
+function startFullRefresh(){
+  if(fullRefreshTimer)return;
+  nextFullRefreshAt = Date.now() + FULL_REFRESH_MS;
+  fullRefreshTimer = setInterval(refreshFullData, FULL_REFRESH_MS);
+  refreshBadgeTimer = setInterval(updateRefreshBadge, 30000);
+  document.addEventListener('visibilitychange', ()=>{
+    if(!document.hidden && nextFullRefreshAt && Date.now() >= nextFullRefreshAt)refreshFullData();
+    else updateRefreshBadge();
+  });
+  updateRefreshBadge();
+}
+function markFullRefresh(){
+  lastFullRefreshAt = Date.now();
+  nextFullRefreshAt = lastFullRefreshAt + FULL_REFRESH_MS;
+  updateRefreshBadge();
+}
+function updateRefreshBadge(text){
+  const el=$('#refreshBadge'); if(!el)return;
+  if(text){el.textContent=text;return;}
+  if(!lastFullRefreshAt){el.textContent='Refresh: hourly';return;}
+  const mins=Math.max(0,Math.ceil((nextFullRefreshAt-Date.now())/60000));
+  el.textContent=`Updated ${new Date(lastFullRefreshAt).toLocaleTimeString()} · next ${mins}m`;
+}
+async function refreshFullData(){
+  if(fullRefreshInFlight)return;
+  fullRefreshInFlight=true;
+  updateRefreshBadge('Refreshing now…');
+  try{
+    await load({throwOnError:true});
+  }catch(e){
+    console.warn('Hourly refresh failed', e);
+    updateRefreshBadge('Refresh failed · retrying hourly');
+  }
+  fullRefreshInFlight=false;
 }
 async function refreshLiveData(){
   if(liveRefreshInFlight || document.hidden || !DATA.sugg)return;
@@ -599,6 +642,7 @@ async function refreshLiveData(){
     ]);
     DATA={...DATA,sugg,agents,curves,news};
     applyLiveCurvePoint();
+    updateRefreshBadge();
     const tab=activeTab();
     renderStrip();
     if(tab==='home')renderHome(STATUS||{});
