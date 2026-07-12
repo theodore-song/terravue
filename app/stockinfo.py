@@ -198,7 +198,7 @@ def _nasdaq_intraday(ticker: str, timeframe: str = "1d") -> dict | None:
         return None
 
 
-def get_live_prices(tickers: list[str]) -> dict[str, float]:
+def get_live_prices(tickers: list[str], allow_fallback: bool = True) -> dict[str, float]:
     """Best-effort current prices from Yahoo's quote endpoint."""
     tickers = sorted({t.upper().strip() for t in tickers if t})
     out: dict[str, float] = {}
@@ -215,6 +215,8 @@ def get_live_prices(tickers: list[str]) -> dict[str, float]:
                     out[sym.upper()] = float(px)
         except Exception as exc:
             print(f"[stockinfo] live quote batch failed: {exc}")
+    if not allow_fallback:
+        return out
     missing = [t for t in tickers if t not in out]
     for ticker in missing[:80]:
         chart = (_ohlcv(ticker, "1d", "1m") or _spark_ohlcv(ticker, "1d", "1m")

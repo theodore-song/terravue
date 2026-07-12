@@ -52,7 +52,7 @@ def agents(live: bool = False):
             for a in view.get("agents", [])
             for h in a.get("snapshot", {}).get("holdings", [])
         ]
-        view = live_view.revalue_agents_view(view, stockinfo.get_live_prices(tickers))
+        view = live_view.revalue_agents_view(view, stockinfo.get_live_prices(tickers, allow_fallback=False))
     return view
 
 
