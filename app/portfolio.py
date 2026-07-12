@@ -17,12 +17,17 @@ class Position:
     ticker: str
     shares: float
     avg_cost: float
+    peak_price: float | None = None
+    profit_taken: bool = False
 
     def market_value(self, price: float) -> float:
         return self.shares * price
 
     def unrealized(self, price: float) -> float:
         return (price - self.avg_cost) * self.shares
+
+    def mark_price(self, price: float) -> None:
+        self.peak_price = max(self.peak_price or self.avg_cost or price, price)
 
 
 @dataclass
@@ -75,8 +80,9 @@ class Portfolio:
             new_shares = pos.shares + shares
             pos.avg_cost = (pos.avg_cost * pos.shares + cost) / new_shares
             pos.shares = new_shares
+            pos.mark_price(price)
         else:
-            self.positions[ticker] = Position(ticker, shares, price)
+            self.positions[ticker] = Position(ticker, shares, price, peak_price=price)
         self.trades.append(Trade(_now(), ticker, "BUY", shares, price, rationale))
         return True
 
@@ -108,16 +114,24 @@ class Portfolio:
         holdings = []
         for t, p in sorted(self.positions.items()):
             price = prices.get(t, p.avg_cost)
+            p.mark_price(price)
             mv = p.market_value(price)
+            peak = p.peak_price or p.avg_cost or price
+            peak_gain = (peak / p.avg_cost - 1) * 100 if p.avg_cost else 0.0
+            drawdown_from_peak = (price / peak - 1) * 100 if peak else 0.0
             holdings.append({
                 "ticker": t,
                 "shares": round(p.shares, 2),
                 "avg_cost": round(p.avg_cost, 2),
                 "price": round(price, 2),
+                "peak_price": round(peak, 2),
                 "market_value": round(mv, 2),
                 "unrealized": round(p.unrealized(price), 2),
                 "unrealized_pct": round((price / p.avg_cost - 1) * 100, 2)
                 if p.avg_cost else 0.0,
+                "peak_gain_pct": round(peak_gain, 2),
+                "drawdown_from_peak_pct": round(drawdown_from_peak, 2),
+                "profit_taken": p.profit_taken,
                 "weight": round(mv / equity * 100, 1) if equity else 0.0,
             })
         return {

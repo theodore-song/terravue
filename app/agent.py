@@ -20,6 +20,12 @@ from .portfolio import Portfolio
 SMART_CASH_RESERVE_PCT = max(CASH_RESERVE_PCT, 0.22)
 DRAWDOWN_CASH_RESERVE_PCT = 0.45
 STOP_LOSS_PCT = -4.5
+DEFENSIVE_STOP_LOSS_PCT = -3.0
+DAILY_SHOCK_STOP_PCT = -4.0
+PROFIT_TAKE_PCT = 10.0
+PROFIT_TAKE_FRACTION = 0.35
+TRAILING_STOP_ACTIVATE_PCT = 7.0
+TRAILING_STOP_FROM_PEAK_PCT = -4.0
 WEAK_GAIN_EXIT_PCT = 6.0
 MIN_BUY_COMPOSITE = 0.7
 MIN_STARTER_COMPOSITE = 0.25
@@ -259,6 +265,69 @@ def _daily_movement_note(adef: AgentDef, snapshot: dict, suggestions: dict,
     return reason
 
 
+def _apply_gain_loss_stops(adef: AgentDef, portfolio: Portfolio, ticker: str,
+                           price: float, s: dict | None, score: float,
+                           portfolio_return_pct: float,
+                           actions: list[str]) -> bool:
+    """Apply hard loss stops, trailing stops, and partial profit-taking."""
+    pos = portfolio.positions.get(ticker)
+    if not pos:
+        return False
+
+    pos.mark_price(price)
+    if not pos.avg_cost:
+        return False
+
+    indicators = (s or {}).get("indicators", {}) or {}
+    chg_1d = indicators.get("chg_1d", 0.0) or 0.0
+    ret_1m = indicators.get("ret_1m", 0.0) or 0.0
+    unrealized_pct = (price / pos.avg_cost - 1) * 100
+    peak_price = pos.peak_price or price
+    peak_gain_pct = (peak_price / pos.avg_cost - 1) * 100
+    drawdown_from_peak_pct = (price / peak_price - 1) * 100 if peak_price else 0.0
+    stop_loss_pct = DEFENSIVE_STOP_LOSS_PCT if portfolio_return_pct < -2.0 else STOP_LOSS_PCT
+
+    if unrealized_pct <= stop_loss_pct:
+        shares = pos.shares
+        if portfolio.sell(ticker, shares, price,
+                          f"{adef.name}: loss stop {unrealized_pct:+.1f}%"):
+            actions.append(f"SOLD {shares:.2f} {ticker} @ ${price:.2f} (loss stop {unrealized_pct:+.1f}%)")
+            return True
+
+    if chg_1d <= DAILY_SHOCK_STOP_PCT and unrealized_pct < 0 and score < adef.buy_threshold:
+        shares = pos.shares
+        if portfolio.sell(ticker, shares, price,
+                          f"{adef.name}: daily shock stop {chg_1d:+.1f}%"):
+            actions.append(f"SOLD {shares:.2f} {ticker} @ ${price:.2f} (daily shock stop)")
+            return True
+
+    if peak_gain_pct >= TRAILING_STOP_ACTIVATE_PCT \
+            and drawdown_from_peak_pct <= TRAILING_STOP_FROM_PEAK_PCT:
+        shares = pos.shares
+        if portfolio.sell(ticker, shares, price,
+                          f"{adef.name}: trailing gain stop {drawdown_from_peak_pct:+.1f}% from high"):
+            actions.append(f"SOLD {shares:.2f} {ticker} @ ${price:.2f} (trailing gain stop)")
+            return True
+
+    if unrealized_pct >= PROFIT_TAKE_PCT and not pos.profit_taken:
+        shares = pos.shares * PROFIT_TAKE_FRACTION
+        if portfolio.sell(ticker, shares, price,
+                          f"{adef.name}: took partial gain {unrealized_pct:+.1f}%"):
+            actions.append(f"TRIMMED {shares:.2f} {ticker} @ ${price:.2f} (took gain {unrealized_pct:+.1f}%)")
+            if ticker in portfolio.positions:
+                portfolio.positions[ticker].profit_taken = True
+            return False
+
+    if unrealized_pct >= WEAK_GAIN_EXIT_PCT and ret_1m < 0 and score < adef.buy_threshold:
+        shares = pos.shares
+        if portfolio.sell(ticker, shares, price,
+                          f"{adef.name}: cashed fading gain {unrealized_pct:+.1f}%"):
+            actions.append(f"SOLD {shares:.2f} {ticker} @ ${price:.2f} (cashed fading gain)")
+            return True
+
+    return False
+
+
 def _sync_to_leader(adef: AgentDef, suggestions: dict, leader: AgentDef | None) -> dict:
     portfolio = Portfolio.load(adef.id)
     actions: list[str] = []
@@ -268,11 +337,12 @@ def _sync_to_leader(adef: AgentDef, suggestions: dict, leader: AgentDef | None) 
 
     if leader is None or leader.id == adef.id:
         curve = portfolio.record_equity(prices)
+        snapshot = portfolio.snapshot(prices)
         portfolio.save()
         return {
             "id": adef.id,
             "actions": ["No leader to copy yet."],
-            "snapshot": portfolio.snapshot(prices),
+            "snapshot": snapshot,
             "recent_trades": portfolio.recent_trades(),
             "curve": curve,
         }
@@ -300,6 +370,13 @@ def _sync_to_leader(adef: AgentDef, suggestions: dict, leader: AgentDef | None) 
     # Sell names the leader no longer owns, plus trim oversized positions.
     for ticker in list(portfolio.positions.keys()):
         price = prices.get(ticker, portfolio.positions[ticker].avg_cost)
+        s = by_ticker.get(ticker)
+        score = leader.score(s) if leader and s else 0.0
+        if _apply_gain_loss_stops(adef, portfolio, ticker, price, s, score,
+                                  (equity / STARTING_CASH - 1) * 100, actions):
+            continue
+        if ticker not in portfolio.positions:
+            continue
         target_val = target_weights.get(ticker, 0.0) * equity
         current_val = portfolio.positions[ticker].market_value(price)
         if target_val <= 0:
@@ -333,11 +410,12 @@ def _sync_to_leader(adef: AgentDef, suggestions: dict, leader: AgentDef | None) 
         actions.append(f"No trades — already aligned with {leader.name}.")
 
     curve = portfolio.record_equity(prices)
+    snapshot = portfolio.snapshot(prices)
     portfolio.save()
     return {
         "id": adef.id,
         "actions": actions,
-        "snapshot": portfolio.snapshot(prices),
+        "snapshot": snapshot,
         "recent_trades": portfolio.recent_trades(),
         "curve": curve,
     }
@@ -398,11 +476,12 @@ def _copy_peer_trades(adef: AgentDef, suggestions: dict, peers: list[dict]) -> d
         actions.append("No peer-copy trades — no leading buy passed this agent's filters.")
 
     curve = portfolio.record_equity(prices)
+    snapshot = portfolio.snapshot(prices)
     portfolio.save()
     return {
         "id": adef.id,
         "actions": actions,
-        "snapshot": portfolio.snapshot(prices),
+        "snapshot": snapshot,
         "recent_trades": portfolio.recent_trades(),
         "curve": curve,
     }
@@ -422,8 +501,18 @@ def _run_long_term_cycle(adef: AgentDef, suggestions: dict) -> dict:
 
     # Exit names that are no longer in the long-term basket.
     for ticker in list(portfolio.positions.keys()):
+        price = prices.get(ticker, portfolio.positions[ticker].avg_cost)
+        s = by_ticker.get(ticker)
+        score = adef.score(s) if s else 0.0
+        if _apply_gain_loss_stops(
+            adef, portfolio, ticker, price, s, score,
+            (portfolio.equity(prices) / STARTING_CASH - 1) * 100,
+            actions,
+        ):
+            continue
+        if ticker not in portfolio.positions:
+            continue
         if ticker not in target_tickers:
-            price = prices.get(ticker, portfolio.positions[ticker].avg_cost)
             shares = portfolio.positions[ticker].shares
             if portfolio.sell(ticker, shares, price, f"{adef.name}: removed from long-term suggestions"):
                 actions.append(f"SOLD {shares:.2f} {ticker} @ ${price:.2f} (left long-term list)")
@@ -461,11 +550,12 @@ def _run_long_term_cycle(adef: AgentDef, suggestions: dict) -> dict:
         actions.append("No trades — long-term basket already aligned.")
 
     curve = portfolio.record_equity(prices)
+    snapshot = portfolio.snapshot(prices)
     portfolio.save()
     return {
         "id": adef.id,
         "actions": actions,
-        "snapshot": portfolio.snapshot(prices),
+        "snapshot": snapshot,
         "recent_trades": portfolio.recent_trades(),
         "curve": curve,
     }
@@ -489,6 +579,12 @@ def run_cycle(adef: AgentDef, suggestions: dict,
         if s is None:
             continue
         sc = adef.score(s)
+        if _apply_gain_loss_stops(
+            adef, portfolio, ticker, price, s, sc, portfolio_return_pct, actions
+        ):
+            continue
+        if ticker not in portfolio.positions:
+            continue
         buyable_now = _is_buyable(adef, s, sc)
         unrealized_pct = (price / portfolio.positions[ticker].avg_cost - 1) * 100 \
             if portfolio.positions[ticker].avg_cost else 0.0
@@ -577,8 +673,8 @@ def run_cycle(adef: AgentDef, suggestions: dict,
         actions.append("No trades — holdings already aligned with signals.")
 
     curve = portfolio.record_equity(prices)
-    portfolio.save()
     snapshot = portfolio.snapshot(prices)
+    portfolio.save()
     return {
         "id": adef.id,
         "actions": actions,
