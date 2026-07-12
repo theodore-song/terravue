@@ -4,10 +4,14 @@ name: Hourly agent run
 # to the cloud KV store (which the live Vercel site reads).
 on:
   schedule:
-    # Hourly on weekdays. GitHub cron is UTC; the site also auto-pulls these
+    # Hourly, every day. GitHub cron is UTC; the site also auto-pulls these
     # updates every hour while it is open.
-    - cron: "0 * * * 1-5"
+    - cron: "0 * * * *"
   workflow_dispatch: {}   # allows manual "Run workflow" from the Actions tab
+
+concurrency:
+  group: hourly-agent-run
+  cancel-in-progress: true
 
 jobs:
   run:

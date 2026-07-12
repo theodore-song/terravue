@@ -535,6 +535,17 @@ let liveRefreshTimer = null, fullRefreshTimer = null, refreshBadgeTimer = null;
 let liveRefreshInFlight = false, fullRefreshInFlight = false, STATUS = null;
 let lastFullRefreshAt = null, nextFullRefreshAt = null;
 const tkr = t => `<span class="tkr" data-tkr="${t}">${t}</span>`;
+async function fetchJson(url, timeoutMs=12000){
+  const controller = new AbortController();
+  const timer = setTimeout(()=>controller.abort(), timeoutMs);
+  try{
+    const res = await fetch(url, {signal: controller.signal, cache:'no-store'});
+    if(!res.ok)throw new Error(`${res.status} ${res.statusText}`);
+    return await res.json();
+  }finally{
+    clearTimeout(timer);
+  }
+}
 
 /* ---------- generic sortable table ---------- */
 const tableState = {};
@@ -569,11 +580,11 @@ $$('#nav button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
 async function load(opts={}){
   try{
     const [sugg,agents,curves,status,news]=await Promise.all([
-      fetch('/api/suggestions?t='+Date.now()).then(r=>r.json()),
-      fetch('/api/agents?live=true&t='+Date.now()).then(r=>r.json()),
-      fetch('/api/equity-history?t='+Date.now()).then(r=>r.json()),
-      fetch('/api/status?t='+Date.now()).then(r=>r.json()),
-      fetch('/api/news?t='+Date.now()).then(r=>r.json()).catch(()=>({reactions:[],headlines:[]})),
+      fetchJson('/api/suggestions?t='+Date.now()),
+      fetchJson('/api/agents?t='+Date.now()),
+      fetchJson('/api/equity-history?t='+Date.now()),
+      fetchJson('/api/status?t='+Date.now()),
+      fetchJson('/api/news?t='+Date.now()).catch(()=>({reactions:[],headlines:[]})),
     ]);
     DATA={sugg,agents,curves,news}; STATUS=status;
     applyLiveCurvePoint();
@@ -634,13 +645,13 @@ async function refreshLiveData(){
   if(liveRefreshInFlight || document.hidden || !DATA.sugg)return;
   liveRefreshInFlight=true;
   try{
-    const [sugg,agents,curves,news]=await Promise.all([
-      fetch('/api/suggestions?t='+Date.now()).then(r=>r.json()),
-      fetch('/api/agents?live=true&t='+Date.now()).then(r=>r.json()),
-      fetch('/api/equity-history?t='+Date.now()).then(r=>r.json()),
-      fetch('/api/news?t='+Date.now()).then(r=>r.json()).catch(()=>DATA.news||{reactions:[],headlines:[]}),
+    const liveAgents = fetchJson('/api/agents?live=true&t='+Date.now(), 10000)
+      .catch(e=>{console.warn('Live agent reprice skipped', e); return DATA.agents;});
+    const [agents,curves]=await Promise.all([
+      liveAgents,
+      fetchJson('/api/equity-history?t='+Date.now(), 8000).catch(()=>DATA.curves),
     ]);
-    DATA={...DATA,sugg,agents,curves,news};
+    DATA={...DATA,agents,curves};
     applyLiveCurvePoint();
     updateRefreshBadge();
     const tab=activeTab();
@@ -1222,17 +1233,24 @@ function drawSkCharts(){
   const X=ser.t.slice(s).map(t=>t*1000);
   const pts=(arr)=>X.map((x,i)=>({x, y:arr[s+i]}));
   const ohlc=X.map((x,i)=>({x, o:ser.o[s+i], h:ser.h[s+i], l:ser.l[s+i], c:ser.c[s+i]}));
+  const step = X.length>1 ? Math.max(60000, X[1]-X[0]) : 60000;
+  const timePad = cfg.intraday ? step * 0.8 : step * 0.5;
   const up=ser.c[ser.c.length-1]>=ser.c[s];
   const base=ser.c[s]||ser.c[ser.c.length-1]||1;
   const dec=cfg.intraday||skRange==='1H'?2:0;
   const priceTick=v=>'$'+Number(v).toFixed(dec);
   const pctFromBase=v=>((v/base-1)*100);
   const axisX={type:'time',time:{unit:cfg.unit},
+    min:X[0]-timePad,max:X[X.length-1]+timePad,bounds:'ticks',offset:true,
     grid:{display:false},ticks:{color:'#8ea4af',maxTicksLimit:7,autoSkip:true}};
+  const denseCandle = cfg.intraday && X.length > 140;
+  const candleWidth = Math.max(1, Math.min(denseCandle ? 3 : 7, Math.floor(760 / Math.max(X.length, 1))));
 
   const priceDs=[];
   if(skType==='candle'){
     priceDs.push({type:'candlestick',label:skData.ticker,data:ohlc,
+      barThickness:candleWidth,maxBarThickness:candleWidth,
+      categoryPercentage:.92,barPercentage:.82,
       color:{up:'#cfe88f',down:'#ec8472',unchanged:'#95AFBA'},borderColor:{up:'#cfe88f',down:'#ec8472',unchanged:'#95AFBA'}});
   }else{
     priceDs.push({type:'line',label:'Close',data:pts(ser.c),borderColor:up?'#cfe88f':'#ec8472',
@@ -1249,7 +1267,7 @@ function drawSkCharts(){
           if(r.c!=null)return `${c.dataset.label}: O ${priceTick(r.o)} H ${priceTick(r.h)} L ${priceTick(r.l)} C ${priceTick(r.c)} (${pct(pctFromBase(r.c))})`;
           return `${c.dataset.label}: ${priceTick(close)} (${pct(pctFromBase(close))})`;
         }}}},
-      scales:{x:axisX,y:{position:'right',grid:{color:'rgba(255,255,255,.05)'},ticks:{color:'#8ea4af',callback:priceTick}}}}});
+      scales:{x:axisX,y:{position:'right',bounds:'data',grace:cfg.intraday?'10%':'6%',grid:{color:'rgba(255,255,255,.05)'},ticks:{color:'#8ea4af',callback:priceTick}}}}});
 
   const volColors=X.map((x,i)=>(ser.c[s+i]>=(ser.o[s+i]??ser.c[s+i])?'rgba(207,232,143,.55)':'rgba(236,132,114,.55)'));
   charts.skVol=new Chart($('#skVol'),{type:'bar',data:{datasets:[{label:'Vol',data:pts(ser.v),backgroundColor:volColors,borderWidth:0}]},
