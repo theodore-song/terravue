@@ -173,7 +173,13 @@ def augment_agents_view(view: dict | None) -> dict:
         agent["color"] = adef.color
         snapshot = agent.get("snapshot") or _empty_snapshot()
         cash_pct = snapshot.get("cash", 0) / max(snapshot.get("equity", 1), 1) * 100
-        if not agent.get("strategy_note"):
+        if adef.copy_leader:
+            agent["strategy_note"] = (
+                "Daily strategy: use the leader as a watchlist, then copy only holdings "
+                "with positive MACD, trend and breakout momentum. If the leader's book "
+                f"is weak, fill with stronger standalone momentum names and keep about {cash_pct:.0f}% cash."
+            )
+        elif not agent.get("strategy_note"):
             if adef.long_term_suggestions:
                 agent["strategy_note"] = (
                     "Daily strategy: hold the highest-confidence long-term suggestions "
