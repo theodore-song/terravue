@@ -140,9 +140,14 @@ def _duquesne(s: dict) -> float:
 
 
 def _echo(s: dict) -> float:
-    # Placeholder scorer; Echo's actual behavior is handled by copying the
-    # current leader's portfolio after the strategy agents have traded.
-    return s.get("composite", 0.0)
+    # Copycat with its own momentum veto: favor leader-owned names only when
+    # MACD, trend and breakout strength confirm the move.
+    return (
+        1.25 * _sig(s, MACD)
+        + 1.0 * _sig(s, TREND)
+        + 0.75 * _sig(s, BREAKOUT)
+        + 0.25 * s.get("composite", 0.0)
+    )
 
 
 def _longview(s: dict) -> float:
@@ -166,9 +171,9 @@ AGENTS: list[AgentDef] = [
     AgentDef("orion", "Orion", "Low-volatility quality",
              "Prefers steady, low-volatility names with positive momentum. Defensive and broad.",
              "#D5E1A3", 0.06, 14, 0.55, -0.15, _orion),
-    AgentDef("echo", "Echo", "Leader copycat",
-             "Copies whoever is leading the scoreboard, matching that agent's holdings after each run.",
-             "#F4D35E", 0.14, 20, 0.0, -99.0, _echo, copy_leader=True),
+    AgentDef("echo", "Echo", "Momentum copycat",
+             "Copies the leader only when MACD, trend and breakout momentum confirm the holding.",
+             "#F4D35E", 0.10, 14, 1.0, -0.25, _echo, copy_leader=True),
     AgentDef("berkshire", "Berkshire Bot", "Buffett-style quality",
              "Models Berkshire's concentrated durable-compounder playbook with a public-holdings watchlist.",
              "#5BC0BE", 0.08, 10, 1.05, -0.15, _berkshire, BERKSHIRE_BOOK),

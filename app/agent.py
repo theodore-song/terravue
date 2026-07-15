@@ -33,6 +33,9 @@ MAX_NORMAL_POSITION_PCT = 0.10
 MAX_DRAWDOWN_POSITION_PCT = 0.06
 PEER_COPY_MAX_TRADES = 3
 PEER_COPY_EDGE_PCT = 0.01
+ECHO_MIN_MACD = 0.2
+ECHO_MIN_TREND = 0.2
+ECHO_MIN_RET_1M = 0.0
 
 
 def _cash_reserve_pct(portfolio_return_pct: float) -> float:
@@ -108,6 +111,25 @@ def _is_starter_buyable(adef: AgentDef, s: dict, score: float) -> bool:
     if adef.id == "sage":
         return ret_1m > -10 and (rsi > 0.15 or macd > -0.15) and trend > -0.45
     return ret_1m > -8 and trend > -0.3 and macd > -0.35
+
+
+def _is_echo_momentum_buyable(s: dict, score: float) -> bool:
+    indicators = s.get("indicators", {}) or {}
+    macd = _signal_score(s, "MACD")
+    trend = _signal_score(s, "Trend (MA cross)")
+    breakout = _signal_score(s, "Breakout (52w channel)")
+    ret_1m = indicators.get("ret_1m", 0.0) or 0.0
+    chg_1d = indicators.get("chg_1d", 0.0) or 0.0
+    volatility = indicators.get("volatility", 0.3) or 0.3
+    return (
+        score >= 1.0
+        and macd >= ECHO_MIN_MACD
+        and trend >= ECHO_MIN_TREND
+        and ret_1m >= ECHO_MIN_RET_1M
+        and chg_1d > -2.0
+        and volatility <= 1.05
+        and (breakout > 0.2 or score >= 1.65)
+    )
 
 
 def _starter_basket(adef: AgentDef, portfolio: Portfolio, suggestions: dict,
@@ -197,9 +219,9 @@ def _daily_strategy_note(adef: AgentDef, snapshot: dict, actions: list[str],
     if adef.copy_leader:
         target = leader_name or "the current leader"
         return (
-            f"{prefix}Copy {target}'s best risk-adjusted holdings, but skip losing or "
-            f"technically weak positions. Keep about {cash_pct:.0f}% cash until the "
-            "leader's book proves it is working."
+            f"{prefix}Use {target}'s book as the first watchlist, then copy only names "
+            "with positive MACD, trend and momentum confirmation. Fill gaps with the "
+            f"strongest standalone momentum names and keep about {cash_pct:.0f}% cash."
         )
     if adef.long_term_suggestions:
         return (
@@ -352,26 +374,54 @@ def _sync_to_leader(adef: AgentDef, suggestions: dict, leader: AgentDef | None) 
     equity = portfolio.equity(prices)
 
     target_weights = {}
+    leader_targets: set[str] = set()
     leader_is_profitable = leader_equity >= STARTING_CASH
     if leader_equity > 0:
         for ticker, pos in leader_pf.positions.items():
             s = by_ticker.get(ticker)
             price = prices.get(ticker)
             unrealized_pct = (price / pos.avg_cost - 1) * 100 if price and pos.avg_cost else 0
+            echo_score = adef.score(s) if s else 0.0
             if ticker in prices and (
-                leader_is_profitable
-                or (unrealized_pct >= 0 and s and _is_buyable(leader, s, leader.score(s)))
+                s
+                and _is_echo_momentum_buyable(s, echo_score)
+                and (
+                    leader_is_profitable
+                    or unrealized_pct >= 0
+                    or _is_buyable(leader, s, leader.score(s))
+                )
             ):
                 target_weights[ticker] = min(
                     pos.market_value(prices[ticker]) / leader_equity,
                     _position_cap(adef, (equity / STARTING_CASH - 1) * 100),
                 )
+                leader_targets.add(ticker)
+
+    # If the leader's holdings are thin or technically weak, Echo fills the
+    # remaining room with the strongest current MACD/trend momentum names.
+    momentum_candidates = sorted(
+        [
+            (adef.score(s), s)
+            for s in sugg
+            if s.get("ticker") not in target_weights
+            and _is_echo_momentum_buyable(s, adef.score(s))
+        ],
+        key=lambda x: x[0],
+        reverse=True,
+    )
+    for score, s in momentum_candidates:
+        if len(target_weights) >= adef.max_positions:
+            break
+        target_weights[s["ticker"]] = min(
+            _position_cap(adef, (equity / STARTING_CASH - 1) * 100) * 0.75,
+            adef.max_position_pct,
+        )
 
     # Sell names the leader no longer owns, plus trim oversized positions.
     for ticker in list(portfolio.positions.keys()):
         price = prices.get(ticker, portfolio.positions[ticker].avg_cost)
         s = by_ticker.get(ticker)
-        score = leader.score(s) if leader and s else 0.0
+        score = adef.score(s) if s else 0.0
         if _apply_gain_loss_stops(adef, portfolio, ticker, price, s, score,
                                   (equity / STARTING_CASH - 1) * 100, actions):
             continue
@@ -381,8 +431,8 @@ def _sync_to_leader(adef: AgentDef, suggestions: dict, leader: AgentDef | None) 
         current_val = portfolio.positions[ticker].market_value(price)
         if target_val <= 0:
             shares = portfolio.positions[ticker].shares
-            if portfolio.sell(ticker, shares, price, f"{adef.name}: leader exited {ticker}"):
-                actions.append(f"SOLD {shares:.2f} {ticker} @ ${price:.2f} (leader copy)")
+            if portfolio.sell(ticker, shares, price, f"{adef.name}: MACD/momentum rejected {ticker}"):
+                actions.append(f"SOLD {shares:.2f} {ticker} @ ${price:.2f} (failed copy momentum)")
         elif current_val > target_val * 1.15:
             shares = (current_val - target_val) / price
             if portfolio.sell(ticker, shares, price, f"{adef.name}: trim to leader weight"):
@@ -402,8 +452,9 @@ def _sync_to_leader(adef: AgentDef, suggestions: dict, leader: AgentDef | None) 
         if spend < max(price, equity * 0.01):
             continue
         shares = spend / price
-        if portfolio.buy(ticker, shares, price, f"{adef.name}: copied {leader.name}"):
-            actions.append(f"BOUGHT {shares:.2f} {ticker} @ ${price:.2f} (copy {leader.name})")
+        source = f"copy {leader.name}" if ticker in leader_targets else "momentum fill"
+        if portfolio.buy(ticker, shares, price, f"{adef.name}: {source}"):
+            actions.append(f"BOUGHT {shares:.2f} {ticker} @ ${price:.2f} ({source})")
             investable -= spend
 
     if not actions:
