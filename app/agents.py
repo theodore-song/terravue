@@ -181,8 +181,8 @@ AGENTS: list[AgentDef] = [
     AgentDef("duquesne", "Duquesne Bot", "Macro momentum",
              "Tracks a Druckenmiller-like macro momentum basket across tech, cyclicals and sector ETFs.",
              "#6A2C70", 0.08, 10, 1.1, -0.2, _duquesne, DUQUESNE_BOOK),
-    AgentDef("longview", "LongView", "Long-term suggestions",
-             "Holds the slower 3-12 month suggestion basket so it can be compared against the trading agents.",
+    AgentDef("longview", "Long-Term Trader", "Long-term suggestion trader",
+             "Trades the slower 3-12 month suggestion basket so its performance can be compared against every other agent.",
              "#A78BFA", 0.08, 14, 0.0, -99.0, _longview, long_term_suggestions=True),
 ]
 

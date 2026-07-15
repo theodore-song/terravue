@@ -167,6 +167,10 @@ def augment_agents_view(view: dict | None) -> dict:
         adef = defs.get(agent.get("id"))
         if not adef:
             continue
+        agent["name"] = adef.name
+        agent["style"] = adef.style
+        agent["blurb"] = adef.blurb
+        agent["color"] = adef.color
         snapshot = agent.get("snapshot") or _empty_snapshot()
         cash_pct = snapshot.get("cash", 0) / max(snapshot.get("equity", 1), 1) * 100
         if not agent.get("strategy_note"):
